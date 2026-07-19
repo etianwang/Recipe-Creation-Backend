@@ -186,9 +186,20 @@ function startGateway() {
   });
 }
 
+function resolveMainJs() {
+  const candidates = [
+    path.join(__dirname, '..', 'dist', 'main.js'),
+    path.join(__dirname, '..', 'dist', 'src', 'main.js'),
+  ];
+  for (const p of candidates) {
+    if (require('fs').existsSync(p)) return p;
+  }
+  return candidates[0];
+}
+
 function startNest(env) {
-  const mainJs = path.join(__dirname, '..', 'dist', 'main.js');
-  log(`Starting Nest on 127.0.0.1:${NEST_PORT}`);
+  const mainJs = resolveMainJs();
+  log(`Starting Nest on 127.0.0.1:${NEST_PORT} (${mainJs})`);
   const child = spawn(process.execPath, [mainJs], {
     stdio: 'inherit',
     env: { ...env, PORT: String(NEST_PORT) },
