@@ -1,0 +1,182 @@
+// Prisma schema — MySQL for 微信云托管
+// Local docker also uses MySQL 8 for parity
+
+generator client {
+  provider      = "prisma-client-js"
+  // 微信云托管 / alpine 运行时
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum IngredientCategory {
+  MAIN
+  SIDE
+  SEASONING
+  SPICE
+  DRINK
+}
+
+enum RecipeSource {
+  MANUAL
+  AI
+  USER
+}
+
+enum RecipeStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum MaterialType {
+  MAIN
+  SIDE
+  SEASONING
+  SPICE
+  OTHER
+}
+
+enum KnowledgeSource {
+  MANUAL
+  AI
+}
+
+enum ReviewKind {
+  RECIPE
+  SUBSTITUTE
+  INGREDIENT
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Char(36)
+  openid       String?  @unique @db.VarChar(128)
+  username     String?  @unique @db.VarChar(64)
+  passwordHash String?  @map("password_hash") @db.VarChar(255)
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  reviews KnowledgeReview[]
+
+  @@map("users")
+}
+
+model Ingredient {
+  id          String             @id @default(uuid()) @db.Char(36)
+  name        String             @unique @db.VarChar(128)
+  category    IngredientCategory
+  taste       String?            @db.VarChar(64)
+  description String?            @db.Text
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  recipeMaterials RecipeMaterial[]
+  substitutesFrom IngredientSubstitute[] @relation("SubstituteFrom")
+  substitutesTo   IngredientSubstitute[] @relation("SubstituteTo")
+
+  @@map("ingredients")
+}
+
+model Recipe {
+  id         String       @id @default(uuid()) @db.Char(36)
+  name       String       @db.VarChar(191)
+  source     RecipeSource @default(MANUAL)
+  confidence Float?
+  status     RecipeStatus @default(PUBLISHED)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  materials          RecipeMaterial[]
+  aiGeneratedRecipes AiGeneratedRecipe[]
+
+  @@index([name])
+  @@map("recipes")
+}
+
+model RecipeMaterial {
+  recipeId     String       @map("recipe_id") @db.Char(36)
+  ingredientId String       @map("ingredient_id") @db.Char(36)
+  type         MaterialType
+  required     Boolean      @default(true)
+
+  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@id([recipeId, ingredientId])
+  @@map("recipe_materials")
+}
+
+model IngredientSubstitute {
+  ingredientId String          @map("ingredient_id") @db.Char(36)
+  substituteId String          @map("substitute_id") @db.Char(36)
+  score        Float
+  source       KnowledgeSource @default(MANUAL)
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  ingredient Ingredient @relation("SubstituteFrom", fields: [ingredientId], references: [id], onDelete: Cascade)
+  substitute Ingredient @relation("SubstituteTo", fields: [substituteId], references: [id], onDelete: Cascade)
+
+  @@id([ingredientId, substituteId])
+  @@map("ingredient_substitutes")
+}
+
+model AiQueryLog {
+  id          String   @id @default(uuid()) @db.Char(36)
+  queryHash   String   @map("query_hash") @db.VarChar(64)
+  input       Json
+  prompt      String   @db.LongText
+  rawResponse String   @map("raw_response") @db.LongText
+  parsedOk    Boolean  @map("parsed_ok")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([queryHash, createdAt])
+  @@map("ai_query_logs")
+}
+
+model AiQueryCache {
+  queryHash String   @id @map("query_hash") @db.VarChar(64)
+  input     Json
+  response  Json
+  createdAt DateTime @default(now()) @map("created")
+
+  @@map("ai_query_cache")
+}
+
+model AiGeneratedRecipe {
+  id             String   @id @default(uuid()) @db.Char(36)
+  queryHash      String   @map("query_hash") @db.VarChar(64)
+  payload        Json
+  linkedRecipeId String?  @map("linked_recipe_id") @db.Char(36)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  linkedRecipe Recipe? @relation(fields: [linkedRecipeId], references: [id], onDelete: SetNull)
+
+  @@index([queryHash])
+  @@map("ai_generated_recipes")
+}
+
+model KnowledgeReview {
+  id         String       @id @default(uuid()) @db.Char(36)
+  kind       ReviewKind
+  payload    Json
+  status     ReviewStatus @default(PENDING)
+  reviewerId String?      @map("reviewer_id") @db.Char(36)
+  decidedAt  DateTime?    @map("decided_at")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  reviewer User? @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("knowledge_review")
+}
