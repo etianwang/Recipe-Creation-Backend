@@ -12,6 +12,8 @@ const prisma = new PrismaClient();
 const TARGET_INGREDIENTS = Number(process.env.SEED_INGREDIENTS ?? 1000);
 const TARGET_RECIPES = Number(process.env.SEED_RECIPES ?? 5000);
 const TARGET_SUBSTITUTES = Number(process.env.SEED_SUBSTITUTES ?? 5000);
+/** 仅灌 core 列表，几秒内完成，适合云托管 HTTP 触发 */
+const SEED_MINIMAL = process.env.SEED_MINIMAL === '1';
 
 type SeedIngredient = {
   name: string;
@@ -281,7 +283,94 @@ async function chunkedCreateMany<T>(
   }
 }
 
+async function seedCoreOnly() {
+  console.log('Seed mode: MINIMAL (core only)');
+  const ingredientMap = new Map<string, string>();
+
+  for (const item of coreIngredients) {
+    const row = await prisma.ingredient.upsert({
+      where: { name: item.name },
+      create: {
+        name: item.name,
+        category: item.category,
+        taste: item.taste ?? null,
+      },
+      update: {
+        category: item.category,
+        taste: item.taste ?? null,
+      },
+    });
+    ingredientMap.set(row.name, row.id);
+  }
+
+  for (const recipe of coreRecipes) {
+    const existing = await prisma.recipe.findFirst({
+      where: { name: recipe.name, source: RecipeSource.MANUAL },
+    });
+    const recipeId =
+      existing?.id ??
+      (
+        await prisma.recipe.create({
+          data: {
+            name: recipe.name,
+            source: RecipeSource.MANUAL,
+            status: RecipeStatus.PUBLISHED,
+            confidence: 1,
+          },
+        })
+      ).id;
+
+    await prisma.recipeMaterial.deleteMany({ where: { recipeId } });
+    for (const material of recipe.materials) {
+      const ingredientId = ingredientMap.get(material.name);
+      if (!ingredientId) continue;
+      await prisma.recipeMaterial.create({
+        data: {
+          recipeId,
+          ingredientId,
+          type: material.type,
+          required: material.required,
+        },
+      });
+    }
+  }
+
+  for (const sub of coreSubstitutes) {
+    const fromId = ingredientMap.get(sub.from);
+    const toId = ingredientMap.get(sub.to);
+    if (!fromId || !toId) continue;
+    await prisma.ingredientSubstitute.upsert({
+      where: {
+        ingredientId_substituteId: {
+          ingredientId: fromId,
+          substituteId: toId,
+        },
+      },
+      create: {
+        ingredientId: fromId,
+        substituteId: toId,
+        score: sub.score,
+        source: KnowledgeSource.MANUAL,
+      },
+      update: { score: sub.score },
+    });
+  }
+
+  const counts = {
+    ingredients: await prisma.ingredient.count(),
+    recipes: await prisma.recipe.count(),
+    materials: await prisma.recipeMaterial.count(),
+    substitutes: await prisma.ingredientSubstitute.count(),
+  };
+  console.log('Seed complete (minimal):', counts);
+  return counts;
+}
+
 async function main() {
+  if (SEED_MINIMAL) {
+    return seedCoreOnly();
+  }
+
   console.log(
     `Seed targets: ingredients=${TARGET_INGREDIENTS}, recipes=${TARGET_RECIPES}, substitutes=${TARGET_SUBSTITUTES}`,
   );

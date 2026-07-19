@@ -9,6 +9,7 @@ import { IngredientsModule } from './ingredients/ingredients.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RecipeModule } from './recipe/recipe.module';
 import { SearchModule } from './search/search.module';
+import { SystemModule } from './system/system.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SearchModule } from './search/search.module';
     IngredientsModule,
     SearchModule,
     RecipeModule,
+    SystemModule,
   ],
   controllers: [HealthController],
   providers: [
