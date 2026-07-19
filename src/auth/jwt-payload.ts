@@ -4,4 +4,5 @@ export type JwtPayloadUser = {
   sub: string;
   username: string;
   role: UserRole;
+  openid?: string;
 };
