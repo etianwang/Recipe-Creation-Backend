@@ -18,15 +18,11 @@ ENV NODE_ENV=production
 ENV PORT=80
 RUN apk add --no-cache openssl libc6-compat
 COPY package.json package-lock.json ./
-# prisma 已在 dependencies，生产可 migrate
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
-COPY scripts/cloud-start.sh ./scripts/cloud-start.sh
-# 在 runner 内重新 generate，避免覆盖 @prisma 破坏 CLI
-RUN chmod +x ./scripts/cloud-start.sh \
-  && npx prisma generate \
-  && npx prisma --version
+COPY scripts/cloud-start.js ./scripts/cloud-start.js
+RUN npx prisma generate && npx prisma --version
 
 EXPOSE 80
-CMD ["sh", "./scripts/cloud-start.sh"]
+CMD ["node", "./scripts/cloud-start.js"]
