@@ -144,17 +144,20 @@ describe('RecipeRecommendService', () => {
 
     expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(['鸡肉', '土豆'], {
       recipeCount: 4,
-      skipCache: false,
     });
     expect(searchService.recommendFromDatabase).toHaveBeenCalledTimes(2);
     expect(result.items.some((i) => i.recipe === '土豆炒鸡')).toBe(true);
     expect(result.items.some((i) => i.recipe === 'AI 炖鸡')).toBe(true);
     const aiItem = result.items.find((i) => i.recipe === 'AI 炖鸡');
     expect(aiItem?.isAiSuggestion).toBe(true);
-    expect(aiItem?.sourceLabel).toBe('AI推荐');
+    expect(aiItem?.fromRecipeLibrary).toBe(true);
+    expect(aiItem?.sourceLabel).toBe('AI推荐 · 来自菜谱库');
     expect(aiItem?.recipeId).toBe('ai1');
     expect(result.items.find((i) => i.recipe === '土豆炒鸡')?.isAiSuggestion).toBe(
       false,
+    );
+    expect(result.items.find((i) => i.recipe === '土豆炒鸡')?.fromRecipeLibrary).toBe(
+      true,
     );
     expect(result.source).toBe('mixed');
   });
@@ -207,7 +210,6 @@ describe('RecipeRecommendService', () => {
 
     expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(['洋葱', '豆腐'], {
       recipeCount: 5,
-      skipCache: false,
     });
     expect(result.items[0].recipe).toBe('洋葱炒豆腐');
     expect(result.source).toBe('ai');
@@ -419,7 +421,7 @@ describe('RecipeRecommendService', () => {
     expect(result.items).toEqual([]);
   });
 
-  it('calls live AI with skipCache when cache did not fill TOP_N', async () => {
+  it('does not call live AI again when cache exists (TR-REC-004 二次)', async () => {
     searchService.recommendFromDatabase.mockResolvedValue({
       queryHash: 'hash',
       normalizedIngredients: ['土豆'],
@@ -428,25 +430,26 @@ describe('RecipeRecommendService', () => {
     aiRecipeService.loadFromCacheOnly.mockResolvedValue({
       queryHash: 'hash',
       normalizedIngredients: ['土豆'],
-      recipes: [{ name: '缓存菜' }],
+      recipes: [
+        {
+          name: '缓存菜',
+          confidence: 0.9,
+          ingredients: [
+            { name: '土豆', type: '主料', amount: '200g', required: true },
+          ],
+          steps: ['炒'],
+          substitutes: [],
+        },
+      ],
       recipe: { name: '缓存菜' },
       source: 'cache',
-    });
-    aiRecipeService.generateOrLoad.mockResolvedValue({
-      queryHash: 'hash',
-      normalizedIngredients: ['土豆'],
-      recipes: [],
-      recipe: { name: 'test' },
-      source: 'ai',
     });
 
     await service.recommend(['土豆'], { asyncLiveAi: true });
     await Promise.resolve();
 
-    expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(
-      ['土豆'],
-      expect.objectContaining({ skipCache: true }),
-    );
+    expect(aiRecipeService.ensurePersisted).toHaveBeenCalled();
+    expect(aiRecipeService.generateOrLoad).not.toHaveBeenCalled();
   });
 
   it('poll reports pending while background AI is running', async () => {

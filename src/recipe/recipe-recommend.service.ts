@@ -36,7 +36,8 @@ function mapDbItems(
       missing: hit.missing,
       source: isAi ? 'ai' : 'database',
       isAiSuggestion: isAi,
-      sourceLabel: isAi ? 'AI推荐' : '菜谱库',
+      fromRecipeLibrary: true,
+      sourceLabel: isAi ? 'AI推荐 · 来自菜谱库' : '菜谱库',
       ingredients,
       steps,
     };
@@ -98,6 +99,7 @@ export class RecipeRecommendService {
         missing: [],
         source: 'ai',
         isAiSuggestion: true,
+        fromRecipeLibrary: false,
         sourceLabel: 'AI推荐',
         ingredients,
         steps,
@@ -219,13 +221,14 @@ export class RecipeRecommendService {
       if (cacheResult === 'hit') {
         aiSource = 'cache';
         ({ db, items } = await this.loadQualifiedItems(ingredientNames));
+        items = await this.itemsWithAiCacheFallback(ingredientNames, items);
+        // 同组合已有 AI 缓存：只复用沉淀结果，不再调 live AI（TR-REC-004 二次命中）
+        return this.buildResponse(db, items, aiSource, false);
       }
 
-      if (items.length < RECOMMEND_TOP_N && !skipLiveAi) {
-        const skipCache = cacheResult === 'hit';
-
+      if (!skipLiveAi) {
         if (asyncLiveAi) {
-          this.scheduleLiveAi(ingredientNames, { skipCache });
+          this.scheduleLiveAi(ingredientNames);
           return this.buildResponse(db, items, aiSource, true);
         }
 
@@ -233,10 +236,11 @@ export class RecipeRecommendService {
         try {
           const ai = await this.aiRecipeService.generateOrLoad(
             ingredientNames,
-            { recipeCount: want, skipCache },
+            { recipeCount: want },
           );
           aiSource = ai.source;
           ({ db, items } = await this.loadQualifiedItems(ingredientNames));
+          items = await this.itemsWithAiCacheFallback(ingredientNames, items);
         } catch (err) {
           this.logger.warn(
             `live AI supplement failed: ${err instanceof Error ? err.message : err}`,
@@ -248,7 +252,7 @@ export class RecipeRecommendService {
     return this.buildResponse(db, items, aiSource, false);
   }
 
-  /** 轮询：只读库+缓存；若仍不足则等待或再次触发 live AI */
+  /** 轮询：只读库+缓存；仅在无缓存且不足时触发 live AI */
   async pollRecommend(ingredientNames: string[]): Promise<RecommendResponse> {
     const result = await this.recommend(ingredientNames, { skipLiveAi: true });
     let items = await this.itemsWithAiCacheFallback(
@@ -277,19 +281,18 @@ export class RecipeRecommendService {
         ingredientNames,
         refreshed.items,
       );
-      if (items.length > 0) {
-        return {
-          ...refreshed,
-          items,
-          source: items.some((i) => i.source === 'database') ? 'mixed' : 'ai',
-          aiPending: false,
-        };
-      }
-      if (process.env.RECOMMEND_LIVE_AI !== '0') {
-        this.scheduleLiveAi(ingredientNames, { skipCache: true });
-        return { ...refreshed, items, aiPending: true };
-      }
-      return { ...refreshed, items, aiPending: false };
+      // 已有缓存：不再 skipCache 重调 AI
+      return {
+        ...refreshed,
+        items,
+        source: items.some((i) => !i.isAiSuggestion) &&
+          items.some((i) => i.isAiSuggestion)
+          ? 'mixed'
+          : items.some((i) => i.isAiSuggestion)
+            ? 'ai'
+            : 'database',
+        aiPending: false,
+      };
     }
 
     if (process.env.RECOMMEND_LIVE_AI !== '0') {

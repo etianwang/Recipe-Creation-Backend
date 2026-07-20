@@ -16,6 +16,8 @@ export type RecommendItem = {
   source: 'database' | 'cache' | 'ai';
   /** 前端展示：AI 来源为 true */
   isAiSuggestion: boolean;
+  /** 已从 recipes 表读出（含 AI 沉淀），区别于当场生成的 AI 结果 */
+  fromRecipeLibrary: boolean;
   sourceLabel: string;
   ingredients: RecipeIngredientLine[];
   steps: string[];
