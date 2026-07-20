@@ -40,6 +40,8 @@ describe('recipe prompt (T-AI-02)', () => {
     const system = buildRecipeSystemPrompt();
     expect(system).toContain('八角1颗+桂皮1小段');
     expect(system).toMatch(/exactly one ingredient/i);
+    expect(system).toContain('cream cheese');
+    expect(system).toContain('糙米（需延长浸泡和煮制时间）');
     const user = buildRecipeUserPrompt(['鸡肉']);
     expect(user).toContain('八角1颗+桂皮1小段');
   });

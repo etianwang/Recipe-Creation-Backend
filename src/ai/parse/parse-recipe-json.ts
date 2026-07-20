@@ -23,25 +23,50 @@ export type ParsedRecipe = {
 
 const ALLOWED_TYPE_SET = new Set<string>(ALLOWED_INGREDIENT_TYPES);
 
-/** 名称末尾粘连的用量，如 八角1颗 / 桂皮1小段 / 生抽2勺 */
-const TRAILING_AMOUNT_RE =
-  /^(.+?)(\d+(?:\.\d+)?\s*(?:g|kg|ml|l|克|千克|毫升|升)?(?:颗|粒|个|只|片|根|段|小段|大段|条|块|勺|茶匙|汤匙|杯)?|适量|少许|若干)$/u;
+/** 去掉名称里的做法备注：糙米（需延长浸泡…）→ 糙米 */
+export function stripIngredientNameNotes(raw: string): string {
+  return raw
+    .replace(/（[^）]*）/g, ' ')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-/** 将「八角1颗」拆成 name + amount */
+/** 名称末尾粘连用量：八角1颗 / 肉桂粉1/4茶匙 / 生抽2勺 */
+const TRAILING_AMOUNT_RE =
+  /^(.+?)((?:\d+\s*\/\s*\d+|\d+(?:\.\d+)?)\s*(?:g|kg|ml|l|克|千克|毫升|升)?(?:颗|粒|个|只|片|根|段|小段|大段|条|块|勺|茶匙|汤匙|杯)?|适量|少许|若干)$/u;
+
+/** 名称前缀用量：少许蚝油 */
+const LEADING_AMOUNT_RE = /^(少许|适量|若干|一点|一些)\s*(.+)$/u;
+
+/** 将「八角1颗」「少许蚝油」拆成 name + amount */
 export function peelIngredientNameAndAmount(
   rawName: string,
   givenAmount?: string,
 ): { name: string; amount: string } {
-  const trimmed = rawName.trim();
   const given = givenAmount?.trim();
+  let trimmed = stripIngredientNameNotes(rawName);
   if (!trimmed) {
     return { name: '', amount: given || '适量' };
+  }
+
+  const leading = trimmed.match(LEADING_AMOUNT_RE);
+  if (leading?.[1] && leading[2]) {
+    const rest = leading[2].trim();
+    const further = peelIngredientNameAndAmount(rest, leading[1]);
+    return {
+      name: further.name,
+      amount:
+        given && given !== '适量' && given !== further.amount
+          ? given
+          : further.amount || leading[1],
+    };
   }
 
   const m = trimmed.match(TRAILING_AMOUNT_RE);
   if (m?.[1] && m[2] && !/[+＋]/.test(m[1])) {
     const namePart = m[1].trim();
-    const amountFromName = m[2].trim();
+    const amountFromName = m[2].replace(/\s+/g, '').trim();
     if (namePart.length >= 1) {
       return {
         name: namePart,
@@ -57,7 +82,7 @@ export function peelIngredientNameAndAmount(
 }
 
 /**
- * 拆开「八角1颗+桂皮1小段」这类错误合并；用量归入 amount，name 只保留单一食材名。
+ * 拆开「八角1颗+桂皮1小段」「生抽+糖+少许蚝油」；用量归入 amount；去掉括号备注。
  */
 export function expandIngredientRow(item: {
   name: string;
@@ -67,11 +92,12 @@ export function expandIngredientRow(item: {
 }): ParsedIngredient[] {
   const type = item.type;
   const required = item.required;
-  const chunks = item.name
+  const cleaned = stripIngredientNameNotes(item.name);
+  const chunks = cleaned
     .split(/\s*[+＋]\s*/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const parts = chunks.length > 1 ? chunks : [item.name.trim()];
+  const parts = chunks.length > 1 ? chunks : [cleaned];
 
   return parts
     .map((part) => {

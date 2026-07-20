@@ -63,4 +63,46 @@ describe('parseRecipeJson (T-AI-03)', () => {
       { name: '桂皮', type: '香料', required: false, amount: '1小段' },
     ]);
   });
+
+  it('strips notes, fractions, leading 少许, and English aliases (TR-AI-007b)', () => {
+    const recipe = parseRecipeJson(
+      JSON.stringify({
+        name: '测试菜',
+        ingredients: [
+          {
+            name: '糙米（需延长浸泡和煮制时间）',
+            type: '主料',
+            required: true,
+            amount: '100g',
+          },
+          {
+            name: '肉桂粉1/4茶匙',
+            type: '香料',
+            required: false,
+            amount: '适量',
+          },
+          {
+            name: '生抽+糖+少许蚝油',
+            type: '调料',
+            required: false,
+            amount: '适量',
+          },
+          { name: 'cream cheese', type: '辅料', required: false, amount: '50g' },
+          { name: 'mascarpone', type: '辅料', required: false, amount: '50g' },
+        ],
+        steps: ['做'],
+        substitutes: [],
+        confidence: 0.8,
+      }),
+    );
+    expect(recipe.ingredients).toEqual([
+      { name: '糙米', type: '主料', required: true, amount: '100g' },
+      { name: '肉桂粉', type: '香料', required: false, amount: '1/4茶匙' },
+      { name: '生抽', type: '调料', required: false, amount: '适量' },
+      { name: '糖', type: '调料', required: false, amount: '适量' },
+      { name: '蚝油', type: '调料', required: false, amount: '少许' },
+      { name: '奶油奶酪', type: '辅料', required: false, amount: '50g' },
+      { name: '马斯卡彭', type: '辅料', required: false, amount: '50g' },
+    ]);
+  });
 });

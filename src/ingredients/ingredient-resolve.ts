@@ -89,6 +89,16 @@ export const INGREDIENT_NAME_ALIASES: Record<string, string> = {
   淡奶油液: '淡奶油',
   cream: '淡奶油',
   butter: '黄油',
+  'cream cheese': '奶油奶酪',
+  creamcheese: '奶油奶酪',
+  奶油芝士: '奶油奶酪',
+  mascarpone: '马斯卡彭',
+  马斯卡彭芝士: '马斯卡彭',
+  马斯卡朋: '马斯卡彭',
+  cinnamon: '肉桂粉',
+  'cinnamon powder': '肉桂粉',
+  肉桂: '肉桂粉',
+  'brown rice': '糙米',
   // 其他
   青红椒: '青椒',
   灯笼椒: '甜椒',
@@ -101,12 +111,14 @@ export const INGREDIENT_NAME_ALIASES: Record<string, string> = {
 };
 
 export function canonicalizeIngredientName(name: string): string {
-  const trimmed = name.trim();
+  const trimmed = name.trim().replace(/\s+/g, ' ');
   if (!trimmed) return trimmed;
   const lower = trimmed.toLowerCase();
   return (
     INGREDIENT_NAME_ALIASES[trimmed] ??
     INGREDIENT_NAME_ALIASES[lower] ??
+    // 英文多词：再试去空格键
+    INGREDIENT_NAME_ALIASES[lower.replace(/\s+/g, '')] ??
     trimmed
   );
 }
