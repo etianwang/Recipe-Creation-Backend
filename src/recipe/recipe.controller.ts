@@ -29,6 +29,15 @@ function isCallContainerRequest(
   );
 }
 
+function shouldAsyncLiveAi(
+  headers: Record<string, string | undefined>,
+): boolean {
+  if (process.env.RECOMMEND_ASYNC_LIVE_AI === '0') return false;
+  if (process.env.RECOMMEND_ASYNC_LIVE_AI === '1') return true;
+  if (process.env.NODE_ENV === 'production') return true;
+  return isCallContainerRequest(headers);
+}
+
 function toRecommendPayload(result: RecommendResponse) {
   const top = result.items[0];
   return {
@@ -58,7 +67,7 @@ export class RecipeController {
     @Headers() headers: Record<string, string | undefined>,
   ) {
     const result = await this.recommendService.recommend(dto.ingredients, {
-      asyncLiveAi: isCallContainerRequest(headers),
+      asyncLiveAi: shouldAsyncLiveAi(headers),
     });
     return { code: 0, message: 'ok', data: toRecommendPayload(result) };
   }
