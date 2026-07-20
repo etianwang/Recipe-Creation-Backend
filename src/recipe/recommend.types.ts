@@ -1,11 +1,11 @@
 import type { RecipeIngredientLine } from './recipe-detail';
 
 export const RECOMMEND_TOP_N = 5;
-/** 单次 live AI 生成道数（越小越快，首屏优先） */
-export const RECOMMEND_AI_GENERATE_COUNT = 2;
-/** 库内命中计入「足够」的最低匹配分（不含等于） */
-export const RECOMMEND_DB_QUALIFY_SCORE = 30;
-/** 扫描库内候选上限，用于统计 score>30% 的数量 */
+/** 单次 live AI 生成道数（与 PRD：不足时一次取 5 道一致） */
+export const RECOMMEND_AI_GENERATE_COUNT = 5;
+/** 库内命中计入「足够」的最低匹配分（不含等于；PRD：>40%） */
+export const RECOMMEND_DB_QUALIFY_SCORE = 40;
+/** 扫描库内候选上限，用于统计 score>40% 的数量 */
 export const RECOMMEND_DB_SCAN_LIMIT = 20;
 
 export type RecommendItem = {

@@ -179,6 +179,7 @@ export class RecipeRecommendService {
     await this.aiRecipeService.ensurePersisted(
       cached.queryHash,
       cached.recipes,
+      ingredientNames,
     );
     return 'hit';
   }
@@ -232,7 +233,10 @@ export class RecipeRecommendService {
           return this.buildResponse(db, items, aiSource, true);
         }
 
-        const want = RECOMMEND_TOP_N - items.length;
+        const want = Math.max(
+          RECOMMEND_AI_GENERATE_COUNT,
+          RECOMMEND_TOP_N - items.length,
+        );
         try {
           const ai = await this.aiRecipeService.generateOrLoad(
             ingredientNames,
@@ -273,6 +277,7 @@ export class RecipeRecommendService {
       await this.aiRecipeService.ensurePersisted(
         cached.queryHash,
         cached.recipes,
+        ingredientNames,
       );
       const refreshed = await this.recommend(ingredientNames, {
         skipLiveAi: true,

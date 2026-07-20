@@ -59,9 +59,15 @@ export class AiRecipeService {
   async ensurePersisted(
     queryHash: string,
     recipes: ParsedRecipe[],
+    queryIngredients: string[] = [],
   ): Promise<void> {
     if (recipes.length === 0) return;
-    await persistAiRecipes(this.prisma, queryHash, recipes);
+    await persistAiRecipes(
+      this.prisma,
+      queryHash,
+      recipes,
+      queryIngredients,
+    );
   }
 
   /** 按 recipeId 取 AI 原始步骤与用量（库内 AI 菜谱展示用） */
@@ -104,7 +110,11 @@ export class AiRecipeService {
       ? null
       : await this.loadFromCacheOnly(ingredientNames);
     if (cachedHit) {
-      await this.ensurePersisted(queryHash, cachedHit.recipes);
+      await this.ensurePersisted(
+        queryHash,
+        cachedHit.recipes,
+        normalizedIngredients,
+      );
       return cachedHit;
     }
 
@@ -167,7 +177,7 @@ export class AiRecipeService {
       }),
     ]);
 
-    await this.ensurePersisted(queryHash, recipes);
+    await this.ensurePersisted(queryHash, recipes, normalizedIngredients);
 
     return {
       queryHash,

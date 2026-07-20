@@ -54,7 +54,7 @@ describe('RecipeRecommendService', () => {
     service = module.get(RecipeRecommendService);
   });
 
-  it('does not call AI when >=5 DB hits score above 30% (TR-REC-001)', async () => {
+  it('does not call AI when >=5 DB hits score above 40% (TR-REC-001)', async () => {
     searchService.recommendFromDatabase.mockResolvedValue({
       queryHash: 'hash',
       normalizedIngredients: ['鸡肉', '土豆'],
@@ -62,7 +62,7 @@ describe('RecipeRecommendService', () => {
         dbHit({
           id: `r${i}`,
           name: `菜${i}`,
-          score: 40 + i,
+          score: 41 + i,
         }),
       ),
     });
@@ -143,7 +143,7 @@ describe('RecipeRecommendService', () => {
     const result = await service.recommend(['鸡肉', '土豆']);
 
     expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(['鸡肉', '土豆'], {
-      recipeCount: 4,
+      recipeCount: 5,
     });
     expect(searchService.recommendFromDatabase).toHaveBeenCalledTimes(2);
     expect(result.items.some((i) => i.recipe === '土豆炒鸡')).toBe(true);
@@ -215,7 +215,7 @@ describe('RecipeRecommendService', () => {
     expect(result.source).toBe('ai');
   });
 
-  it('ignores DB hits at or below 30% when counting qualified hits', async () => {
+  it('ignores DB hits at or below 40% when counting qualified hits', async () => {
     searchService.recommendFromDatabase
       .mockResolvedValueOnce({
         queryHash: 'hash',
@@ -224,7 +224,7 @@ describe('RecipeRecommendService', () => {
           dbHit({
             id: 'low',
             name: '低分菜',
-            score: 30,
+            score: 40,
             materials: [
               {
                 required: true,
@@ -415,7 +415,7 @@ describe('RecipeRecommendService', () => {
     await Promise.resolve();
     expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(
       ['土豆', '排骨', '番茄', '红薯'],
-      expect.objectContaining({ recipeCount: 2 }),
+      expect.objectContaining({ recipeCount: 5 }),
     );
     expect(result.aiPending).toBe(true);
     expect(result.items).toEqual([]);

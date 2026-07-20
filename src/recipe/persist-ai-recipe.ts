@@ -52,11 +52,16 @@ export async function persistOneAiRecipe(
   tx: Tx,
   recipe: ParsedRecipe,
   queryHash: string,
+  queryIngredients: string[] = [],
 ): Promise<string> {
   const name = recipe.name.trim();
   if (!name || !Array.isArray(recipe.ingredients)) {
     throw new Error('Invalid AI recipe');
   }
+
+  const querySet = new Set(
+    queryIngredients.map((n) => n.trim()).filter(Boolean),
+  );
 
   const existing = await tx.recipe.findFirst({ where: { name } });
   if (existing) {
@@ -89,11 +94,34 @@ export async function persistOneAiRecipe(
       ingName,
       guessIngredientCategory(item.type),
     );
+    // 用户本次提供的食材为必选，其余可选 → 同组合再次搜索匹配度易于 >40%
+    const required =
+      querySet.size > 0 ? querySet.has(ingName) : item.required !== false;
     ingredientIds.push({
       id: row.id,
       type: mapMaterialType(item.type),
-      required: item.required !== false,
+      required,
     });
+  }
+
+  // 若 AI 未包含任何用户食材，至少把用户食材挂为必选，避免无法命中
+  if (querySet.size > 0) {
+    const linkedNames = new Set(
+      recipe.ingredients.map((i) => i.name.trim()).filter(Boolean),
+    );
+    for (const qName of querySet) {
+      if (linkedNames.has(qName)) continue;
+      const row = await ensureIngredientByName(
+        tx,
+        qName,
+        IngredientCategory.MAIN,
+      );
+      ingredientIds.push({
+        id: row.id,
+        type: MaterialType.MAIN,
+        required: true,
+      });
+    }
   }
 
   const created = await tx.recipe.create({
@@ -162,6 +190,7 @@ export async function persistAiRecipes(
   prisma: Pick<PrismaClient, '$transaction'>,
   queryHash: string,
   recipes: ParsedRecipe[],
+  queryIngredients: string[] = [],
 ): Promise<string[]> {
   const ids: string[] = [];
   await prisma.$transaction(async (tx) => {
@@ -170,7 +199,9 @@ export async function persistAiRecipes(
         .map((i) => i.name.trim())
         .filter(Boolean);
       if (!isSafeIngredientCombination(materialNames)) continue;
-      ids.push(await persistOneAiRecipe(tx, recipe, queryHash));
+      ids.push(
+        await persistOneAiRecipe(tx, recipe, queryHash, queryIngredients),
+      );
     }
   });
   return ids;
