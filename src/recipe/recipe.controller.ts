@@ -23,7 +23,9 @@ function isCallContainerRequest(
   return !!(
     headers['x-wx-openid'] ||
     headers['x-wx-from'] ||
-    headers['x-wx-source']
+    headers['x-wx-source'] ||
+    headers['x-wx-env'] ||
+    headers['x-wx-appid']
   );
 }
 

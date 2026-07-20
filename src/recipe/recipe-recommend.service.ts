@@ -70,11 +70,31 @@ export class RecipeRecommendService {
     return mapDbItems(hits, aiDetails);
   }
 
+  private async loadQualifiedItems(
+    ingredientNames: string[],
+  ): Promise<{
+    db: Awaited<ReturnType<SearchService['recommendFromDatabase']>>;
+    items: RecommendItem[];
+  }> {
+    const db = await this.searchService.recommendFromDatabase(
+      ingredientNames,
+      RECOMMEND_DB_SCAN_LIMIT,
+    );
+    const qualified = db.items.filter(
+      (hit) => hit.score > RECOMMEND_DB_QUALIFY_SCORE,
+    );
+    const items = await this.buildItemsFromDb(qualified);
+    return { db, items };
+  }
+
   isLiveAiInFlight(queryHash: string): boolean {
     return this.liveAiInFlight.has(queryHash);
   }
 
-  private scheduleLiveAi(ingredientNames: string[]): void {
+  private scheduleLiveAi(
+    ingredientNames: string[],
+    options?: { skipCache?: boolean },
+  ): void {
     const normalized = normalizeIngredientNames(ingredientNames);
     if (normalized.length === 0) return;
 
@@ -84,7 +104,10 @@ export class RecipeRecommendService {
     this.liveAiInFlight.add(queryHash);
     const want = RECOMMEND_TOP_N;
     void this.aiRecipeService
-      .generateOrLoad(ingredientNames, { recipeCount: want })
+      .generateOrLoad(ingredientNames, {
+        recipeCount: want,
+        skipCache: options?.skipCache,
+      })
       .catch((err) => {
         this.logger.warn(
           `background live AI failed: ${err instanceof Error ? err.message : err}`,
@@ -95,73 +118,76 @@ export class RecipeRecommendService {
       });
   }
 
+  private async applyAiCache(
+    ingredientNames: string[],
+  ): Promise<'hit' | 'miss'> {
+    const cached =
+      await this.aiRecipeService.loadFromCacheOnly(ingredientNames);
+    if (!cached) return 'miss';
+
+    await this.aiRecipeService.ensurePersisted(
+      cached.queryHash,
+      cached.recipes,
+    );
+    return 'hit';
+  }
+
+  private buildResponse(
+    db: Awaited<ReturnType<SearchService['recommendFromDatabase']>>,
+    items: RecommendItem[],
+    aiSource: 'cache' | 'ai' | null,
+    aiPending: boolean,
+  ): RecommendResponse {
+    const sliced = items.slice(0, RECOMMEND_TOP_N);
+    const source: RecommendResponse['source'] = !aiSource
+      ? 'database'
+      : sliced.some((i) => i.source === 'database')
+        ? 'mixed'
+        : aiSource;
+
+    return {
+      queryHash: db.queryHash,
+      normalizedIngredients: db.normalizedIngredients,
+      items: sliced,
+      source,
+      aiPending,
+    };
+  }
+
   async recommend(
     ingredientNames: string[],
     options?: RecommendOptions,
   ): Promise<RecommendResponse> {
-    let db = await this.searchService.recommendFromDatabase(
-      ingredientNames,
-      RECOMMEND_DB_SCAN_LIMIT,
-    );
-
-    let qualified = db.items.filter(
-      (hit) => hit.score > RECOMMEND_DB_QUALIFY_SCORE,
-    );
-    let items = await this.buildItemsFromDb(qualified);
+    let { db, items } = await this.loadQualifiedItems(ingredientNames);
 
     let aiSource: 'cache' | 'ai' | null = null;
-    const needAi = items.length < RECOMMEND_TOP_N;
     const skipLiveAi =
       options?.skipLiveAi === true || process.env.RECOMMEND_LIVE_AI === '0';
     const asyncLiveAi = options?.asyncLiveAi === true;
 
-    if (needAi) {
-      const cached =
-        await this.aiRecipeService.loadFromCacheOnly(ingredientNames);
-      if (cached) {
+    if (items.length < RECOMMEND_TOP_N) {
+      const cacheResult = await this.applyAiCache(ingredientNames);
+      if (cacheResult === 'hit') {
         aiSource = 'cache';
-        await this.aiRecipeService.ensurePersisted(
-          cached.queryHash,
-          cached.recipes,
-        );
-        db = await this.searchService.recommendFromDatabase(
-          ingredientNames,
-          RECOMMEND_DB_SCAN_LIMIT,
-        );
-        qualified = db.items.filter(
-          (hit) => hit.score > RECOMMEND_DB_QUALIFY_SCORE,
-        );
-        items = await this.buildItemsFromDb(qualified);
+        ({ db, items } = await this.loadQualifiedItems(ingredientNames));
       }
 
       if (items.length < RECOMMEND_TOP_N && !skipLiveAi) {
+        const skipCache = cacheResult === 'hit';
+
         if (asyncLiveAi) {
-          this.scheduleLiveAi(ingredientNames);
-          items = items.slice(0, RECOMMEND_TOP_N);
-          return {
-            queryHash: db.queryHash,
-            normalizedIngredients: db.normalizedIngredients,
-            items,
-            source: aiSource ?? 'database',
-            aiPending: true,
-          };
+          this.scheduleLiveAi(ingredientNames, { skipCache });
+          return this.buildResponse(db, items, aiSource, true);
         }
 
         const want = RECOMMEND_TOP_N - items.length;
         try {
           const ai = await this.aiRecipeService.generateOrLoad(
             ingredientNames,
-            { recipeCount: want },
+            { recipeCount: want, skipCache },
           );
           aiSource = ai.source;
-          db = await this.searchService.recommendFromDatabase(
-            ingredientNames,
-            RECOMMEND_DB_SCAN_LIMIT,
-          );
-          qualified = db.items.filter(
-            (hit) => hit.score > RECOMMEND_DB_QUALIFY_SCORE,
-          );
-          items = await this.buildItemsFromDb(qualified);
+          ({ db, items } = await this.loadQualifiedItems(ingredientNames));
         } catch (err) {
           this.logger.warn(
             `live AI supplement failed: ${err instanceof Error ? err.message : err}`,
@@ -170,41 +196,37 @@ export class RecipeRecommendService {
       }
     }
 
-    items = items.slice(0, RECOMMEND_TOP_N);
-
-    const source: RecommendResponse['source'] = !aiSource
-      ? 'database'
-      : items.some((i) => i.source === 'database')
-        ? 'mixed'
-        : aiSource;
-
-    return {
-      queryHash: db.queryHash,
-      normalizedIngredients: db.normalizedIngredients,
-      items,
-      source,
-      aiPending: false,
-    };
+    return this.buildResponse(db, items, aiSource, false);
   }
 
-  /** 轮询：只读库+缓存；若后台 AI 已完成则返回完整列表 */
+  /** 轮询：只读库+缓存；若仍不足则等待或再次触发 live AI */
   async pollRecommend(ingredientNames: string[]): Promise<RecommendResponse> {
     const result = await this.recommend(ingredientNames, { skipLiveAi: true });
-    const stillNeed = result.items.length < RECOMMEND_TOP_N;
-    if (!stillNeed) {
+    if (result.items.length >= RECOMMEND_TOP_N) {
       return { ...result, aiPending: false };
     }
 
-    const cached =
-      await this.aiRecipeService.loadFromCacheOnly(ingredientNames);
-    if (cached) {
+    if (this.isLiveAiInFlight(result.queryHash)) {
+      return { ...result, aiPending: true };
+    }
+
+    const cacheResult = await this.applyAiCache(ingredientNames);
+    if (cacheResult === 'hit') {
       const refreshed = await this.recommend(ingredientNames, {
         skipLiveAi: true,
       });
+      if (refreshed.items.length >= RECOMMEND_TOP_N) {
+        return { ...refreshed, aiPending: false };
+      }
+      if (process.env.RECOMMEND_LIVE_AI !== '0') {
+        this.scheduleLiveAi(ingredientNames, { skipCache: true });
+        return { ...refreshed, aiPending: true };
+      }
       return { ...refreshed, aiPending: false };
     }
 
-    if (this.isLiveAiInFlight(result.queryHash)) {
+    if (process.env.RECOMMEND_LIVE_AI !== '0') {
+      this.scheduleLiveAi(ingredientNames);
       return { ...result, aiPending: true };
     }
 

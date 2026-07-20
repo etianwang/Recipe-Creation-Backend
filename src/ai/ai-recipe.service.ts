@@ -88,7 +88,7 @@ export class AiRecipeService {
 
   async generateOrLoad(
     ingredientNames: string[],
-    options?: { recipeCount?: number },
+    options?: { recipeCount?: number; skipCache?: boolean },
   ): Promise<AiRecipePipelineResult> {
     const normalizedIngredients = normalizeIngredientNames(ingredientNames);
     if (normalizedIngredients.length === 0) {
@@ -100,7 +100,9 @@ export class AiRecipeService {
     }
 
     const queryHash = computeQueryHash(normalizedIngredients);
-    const cachedHit = await this.loadFromCacheOnly(ingredientNames);
+    const cachedHit = options?.skipCache
+      ? null
+      : await this.loadFromCacheOnly(ingredientNames);
     if (cachedHit) {
       await this.ensurePersisted(queryHash, cachedHit.recipes);
       return cachedHit;

@@ -144,6 +144,7 @@ describe('RecipeRecommendService', () => {
 
     expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(['鸡肉', '土豆'], {
       recipeCount: 4,
+      skipCache: false,
     });
     expect(searchService.recommendFromDatabase).toHaveBeenCalledTimes(2);
     expect(result.items.some((i) => i.recipe === '土豆炒鸡')).toBe(true);
@@ -206,6 +207,7 @@ describe('RecipeRecommendService', () => {
 
     expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(['洋葱', '豆腐'], {
       recipeCount: 5,
+      skipCache: false,
     });
     expect(result.items[0].recipe).toBe('洋葱炒豆腐');
     expect(result.source).toBe('ai');
@@ -409,9 +411,42 @@ describe('RecipeRecommendService', () => {
     );
 
     await Promise.resolve();
-    expect(aiRecipeService.generateOrLoad).toHaveBeenCalled();
+    expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(
+      ['土豆', '排骨', '番茄', '红薯'],
+      expect.objectContaining({ recipeCount: 5 }),
+    );
     expect(result.aiPending).toBe(true);
     expect(result.items).toEqual([]);
+  });
+
+  it('calls live AI with skipCache when cache did not fill TOP_N', async () => {
+    searchService.recommendFromDatabase.mockResolvedValue({
+      queryHash: 'hash',
+      normalizedIngredients: ['土豆'],
+      items: [dbHit({ id: 'r1', score: 80 })],
+    });
+    aiRecipeService.loadFromCacheOnly.mockResolvedValue({
+      queryHash: 'hash',
+      normalizedIngredients: ['土豆'],
+      recipes: [{ name: '缓存菜' }],
+      recipe: { name: '缓存菜' },
+      source: 'cache',
+    });
+    aiRecipeService.generateOrLoad.mockResolvedValue({
+      queryHash: 'hash',
+      normalizedIngredients: ['土豆'],
+      recipes: [],
+      recipe: { name: 'test' },
+      source: 'ai',
+    });
+
+    await service.recommend(['土豆'], { asyncLiveAi: true });
+    await Promise.resolve();
+
+    expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(
+      ['土豆'],
+      expect.objectContaining({ skipCache: true }),
+    );
   });
 
   it('poll reports pending while background AI is running', async () => {
