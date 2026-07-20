@@ -27,7 +27,7 @@ export function buildRecipeSystemPrompt(): string {
     'Do not invent that the user already has ingredients they did not list; missing seasonings may appear in ingredients with required=true.',
     `Each ingredient.type MUST be exactly one of: ${ALLOWED_INGREDIENT_TYPES.map((t) => `"${t}"`).join('|')}. Never use "其他", "other", or any other type label.`,
     'Prefer canonical Chinese ingredient names (e.g. 番茄 not 西红柿, 奶油奶酪 not cream cheese, 马斯卡彭 not mascarpone). Do not use English ingredient names when a common Chinese name exists.',
-    'ingredient.name MUST be exactly one ingredient — never join multiple with +/＋/和. Put quantities only in amount. Never put cooking tips in name parentheses. Wrong: 「八角1颗+桂皮1小段」, 「糙米（需延长浸泡和煮制时间）」, 「肉桂粉1/4茶匙」, 「生抽+糖+少许蚝油」. Right: separate items with clean names and amounts.',
+    'ingredient.name MUST be exactly one ingredient — never join multiple with +/＋/和. Put quantities only in amount. Never put cooking tips or amounts in name parentheses. Wrong: 「八角1颗+桂皮1小段」, 「糙米（需延长浸泡和煮制时间）」, 「肉桂粉1/4茶匙」, 「生抽+糖+少许蚝油」, 「蚝油（少许）」. Right: name「蚝油」 with amount「少许」.',
     'Set required=true only for core 主料 that define the dish; 辅料/调料/香料/饮品 should use required=false so match score reflects real coverage.',
     'For each recipe, include substitutes for any ingredients the user may lack (from → alternative list with score).',
     'Prefer common home-cookable dishes: Chinese, Western, Japanese, Korean, Southeast Asian, Middle Eastern, and other everyday cuisines are all welcome. Across the batch, mix cuisines when the pantry fits — do NOT force Chinese-only.',

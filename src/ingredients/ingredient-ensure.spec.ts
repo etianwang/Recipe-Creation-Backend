@@ -61,6 +61,37 @@ describe('ensureIngredientByName', () => {
     });
   });
 
+  it('stores 蚝油 not 蚝油（少许）', async () => {
+    const db = {
+      ingredient: {
+        findUnique: jest.fn().mockResolvedValueOnce(null),
+        create: jest.fn().mockResolvedValue({
+          id: 'oy',
+          name: '蚝油',
+          category: IngredientCategory.SEASONING,
+          taste: null,
+          description: null,
+          source: KnowledgeSource.AI,
+          createdAt: new Date(),
+        }),
+      },
+    };
+
+    await ensureIngredientByName(
+      db,
+      '蚝油（少许）',
+      IngredientCategory.SEASONING,
+      { source: KnowledgeSource.AI },
+    );
+
+    expect(db.ingredient.findUnique).toHaveBeenCalledWith({
+      where: { name: '蚝油' },
+    });
+    expect(db.ingredient.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: '蚝油' }),
+    });
+  });
+
   it('retries read after concurrent unique conflict (P2002)', async () => {
     const uniqueErr = new Prisma.PrismaClientKnownRequestError(
       'Unique constraint failed',

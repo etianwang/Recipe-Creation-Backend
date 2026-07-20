@@ -23,7 +23,12 @@ export type ParsedRecipe = {
 
 const ALLOWED_TYPE_SET = new Set<string>(ALLOWED_INGREDIENT_TYPES);
 
-/** 去掉名称里的做法备注：糙米（需延长浸泡…）→ 糙米 */
+/** 括号内若是用量（少许/适量/1勺…），从 name 剥离；否则整段括号作备注删除 */
+const PAREN_CHUNK_RE = /[（(]([^）)]+)[）)]/g;
+const AMOUNT_LIKE_RE =
+  /^(少许|适量|若干|一点|一些|(?:\d+\s*\/\s*\d+|\d+(?:\.\d+)?)\s*(?:g|kg|ml|l|克|千克|毫升|升|颗|粒|个|只|片|根|段|小段|大段|条|块|勺|茶匙|汤匙|杯)?)$/u;
+
+/** 去掉名称里的做法备注：糙米（需延长浸泡…）→ 糙米；蚝油（少许）→ 见 peel */
 export function stripIngredientNameNotes(raw: string): string {
   return raw
     .replace(/（[^）]*）/g, ' ')
@@ -39,27 +44,49 @@ const TRAILING_AMOUNT_RE =
 /** 名称前缀用量：少许蚝油 */
 const LEADING_AMOUNT_RE = /^(少许|适量|若干|一点|一些)\s*(.+)$/u;
 
-/** 将「八角1颗」「少许蚝油」拆成 name + amount */
+function extractParenAmounts(raw: string): { text: string; amountFromParen?: string } {
+  let amountFromParen: string | undefined;
+  const text = raw
+    .replace(PAREN_CHUNK_RE, (_full, inner: string) => {
+      const tip = String(inner).trim();
+      if (AMOUNT_LIKE_RE.test(tip)) {
+        amountFromParen = tip.replace(/\s+/g, '');
+        return ' ';
+      }
+      return ' ';
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { text, amountFromParen };
+}
+
+/** 将「八角1颗」「少许蚝油」「蚝油（少许）」拆成纯食材名 + amount */
 export function peelIngredientNameAndAmount(
   rawName: string,
   givenAmount?: string,
 ): { name: string; amount: string } {
   const given = givenAmount?.trim();
-  let trimmed = stripIngredientNameNotes(rawName);
+  const { text: withoutParen, amountFromParen } = extractParenAmounts(rawName);
+  let trimmed = withoutParen || stripIngredientNameNotes(rawName);
   if (!trimmed) {
-    return { name: '', amount: given || '适量' };
+    return { name: '', amount: given || amountFromParen || '适量' };
   }
+
+  const preferAmount = (fromName: string) => {
+    if (given && given !== '适量' && given !== fromName) return given;
+    return fromName;
+  };
 
   const leading = trimmed.match(LEADING_AMOUNT_RE);
   if (leading?.[1] && leading[2]) {
     const rest = leading[2].trim();
-    const further = peelIngredientNameAndAmount(rest, leading[1]);
+    const further = peelIngredientNameAndAmount(
+      rest,
+      preferAmount(amountFromParen || leading[1]),
+    );
     return {
       name: further.name,
-      amount:
-        given && given !== '适量' && given !== further.amount
-          ? given
-          : further.amount || leading[1],
+      amount: further.amount || preferAmount(amountFromParen || leading[1]),
     };
   }
 
@@ -70,15 +97,21 @@ export function peelIngredientNameAndAmount(
     if (namePart.length >= 1) {
       return {
         name: namePart,
-        amount:
-          given && given !== '适量' && given !== amountFromName
-            ? given
-            : amountFromName,
+        amount: preferAmount(amountFromName || amountFromParen || '适量'),
       };
     }
   }
 
-  return { name: trimmed, amount: given || '适量' };
+  return {
+    name: trimmed,
+    amount: preferAmount(amountFromParen || given || '适量'),
+  };
+}
+
+/** 入库/展示用的干净食材名（不含用量、备注） */
+export function sanitizeIngredientName(raw: string): string {
+  const peeled = peelIngredientNameAndAmount(raw);
+  return canonicalizeIngredientName(peeled.name);
 }
 
 /**
@@ -92,12 +125,12 @@ export function expandIngredientRow(item: {
 }): ParsedIngredient[] {
   const type = item.type;
   const required = item.required;
-  const cleaned = stripIngredientNameNotes(item.name);
-  const chunks = cleaned
+  // 先按 + 拆，再在每段 peel（含括号用量）；不要先全局剥括号以免丢掉「少许」
+  const chunks = item.name
     .split(/\s*[+＋]\s*/)
     .map((s) => s.trim())
     .filter(Boolean);
-  const parts = chunks.length > 1 ? chunks : [cleaned];
+  const parts = chunks.length > 1 ? chunks : [item.name.trim()];
 
   return parts
     .map((part) => {

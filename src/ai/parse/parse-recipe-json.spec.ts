@@ -105,4 +105,21 @@ describe('parseRecipeJson (T-AI-03)', () => {
       { name: '马斯卡彭', type: '辅料', required: false, amount: '50g' },
     ]);
   });
+
+  it('never keeps amount in name like 蚝油（少许）', () => {
+    const recipe = parseRecipeJson(
+      JSON.stringify({
+        name: '清炒时蔬',
+        ingredients: [
+          { name: '蚝油（少许）', type: '调料', required: false, amount: '适量' },
+        ],
+        steps: ['炒'],
+        substitutes: [],
+        confidence: 0.7,
+      }),
+    );
+    expect(recipe.ingredients).toEqual([
+      { name: '蚝油', type: '调料', required: false, amount: '少许' },
+    ]);
+  });
 });

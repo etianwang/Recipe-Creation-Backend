@@ -5,6 +5,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { canonicalizeIngredientName } from './ingredient-resolve';
+import { peelIngredientNameAndAmount } from '../ai/parse/parse-recipe-json';
 
 type IngredientClient = {
   ingredient: {
@@ -30,6 +31,12 @@ function isUniqueNameConflict(err: unknown): boolean {
   );
 }
 
+/** 名称只保留纯食材名：蚝油（少许）→ 蚝油 */
+function cleanIngredientLabel(rawName: string): string {
+  const peeled = peelIngredientNameAndAmount(rawName);
+  return canonicalizeIngredientName(peeled.name);
+}
+
 /** 并发安全：先查后建，唯一键冲突时再读一次；名称经同义名规范化 */
 export async function ensureIngredientByName(
   db: IngredientClient,
@@ -41,7 +48,7 @@ export async function ensureIngredientByName(
     source?: KnowledgeSource;
   },
 ): Promise<Ingredient> {
-  const name = canonicalizeIngredientName(rawName);
+  const name = cleanIngredientLabel(rawName);
   if (!name) {
     throw new Error('Empty ingredient name');
   }
