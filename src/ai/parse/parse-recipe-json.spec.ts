@@ -40,4 +40,27 @@ describe('parseRecipeJson (T-AI-03)', () => {
     expect(recipe.ingredients[0].type).toBe('辅料');
     expect(recipe.ingredients[1].type).toBe('调料');
   });
+
+  it('splits compound names like 八角1颗+桂皮1小段 (TR-AI-007)', () => {
+    const recipe = parseRecipeJson(
+      JSON.stringify({
+        name: '红烧肉',
+        ingredients: [
+          {
+            name: '八角1颗+桂皮1小段',
+            type: '香料',
+            required: false,
+            amount: '适量',
+          },
+        ],
+        steps: ['炖'],
+        substitutes: [],
+        confidence: 0.8,
+      }),
+    );
+    expect(recipe.ingredients).toEqual([
+      { name: '八角', type: '香料', required: false, amount: '1颗' },
+      { name: '桂皮', type: '香料', required: false, amount: '1小段' },
+    ]);
+  });
 });

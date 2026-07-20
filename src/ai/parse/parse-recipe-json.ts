@@ -23,6 +23,74 @@ export type ParsedRecipe = {
 
 const ALLOWED_TYPE_SET = new Set<string>(ALLOWED_INGREDIENT_TYPES);
 
+/** 名称末尾粘连的用量，如 八角1颗 / 桂皮1小段 / 生抽2勺 */
+const TRAILING_AMOUNT_RE =
+  /^(.+?)(\d+(?:\.\d+)?\s*(?:g|kg|ml|l|克|千克|毫升|升)?(?:颗|粒|个|只|片|根|段|小段|大段|条|块|勺|茶匙|汤匙|杯)?|适量|少许|若干)$/u;
+
+/** 将「八角1颗」拆成 name + amount */
+export function peelIngredientNameAndAmount(
+  rawName: string,
+  givenAmount?: string,
+): { name: string; amount: string } {
+  const trimmed = rawName.trim();
+  const given = givenAmount?.trim();
+  if (!trimmed) {
+    return { name: '', amount: given || '适量' };
+  }
+
+  const m = trimmed.match(TRAILING_AMOUNT_RE);
+  if (m?.[1] && m[2] && !/[+＋]/.test(m[1])) {
+    const namePart = m[1].trim();
+    const amountFromName = m[2].trim();
+    if (namePart.length >= 1) {
+      return {
+        name: namePart,
+        amount:
+          given && given !== '适量' && given !== amountFromName
+            ? given
+            : amountFromName,
+      };
+    }
+  }
+
+  return { name: trimmed, amount: given || '适量' };
+}
+
+/**
+ * 拆开「八角1颗+桂皮1小段」这类错误合并；用量归入 amount，name 只保留单一食材名。
+ */
+export function expandIngredientRow(item: {
+  name: string;
+  type: string;
+  required: boolean;
+  amount?: string;
+}): ParsedIngredient[] {
+  const type = item.type;
+  const required = item.required;
+  const chunks = item.name
+    .split(/\s*[+＋]\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const parts = chunks.length > 1 ? chunks : [item.name.trim()];
+
+  return parts
+    .map((part) => {
+      const peeled = peelIngredientNameAndAmount(
+        part,
+        parts.length === 1 ? item.amount : undefined,
+      );
+      const name = canonicalizeIngredientName(peeled.name);
+      if (!name) return null;
+      return {
+        name,
+        type,
+        required,
+        amount: peeled.amount || '适量',
+      };
+    })
+    .filter((row): row is ParsedIngredient => row !== null);
+}
+
 /** 将 AI 输出的 type 收敛到允许的分类；非法值回落为「辅料」 */
 export function normalizeIngredientType(raw: string): string {
   const t = raw.trim();
@@ -66,26 +134,27 @@ export function parseRecipeObject(data: unknown): ParsedRecipe {
   const ingredientsRaw = Array.isArray(obj.ingredients) ? obj.ingredients : [];
   if (ingredientsRaw.length === 0) throw new Error('EMPTY_INGREDIENTS');
 
-  const ingredients: ParsedIngredient[] = ingredientsRaw.map((item) => {
+  const ingredients: ParsedIngredient[] = ingredientsRaw.flatMap((item) => {
     if (typeof item === 'string') {
-      return {
-        name: canonicalizeIngredientName(item),
+      return expandIngredientRow({
+        name: item,
         type: '主料',
         required: true,
         amount: '适量',
-      };
+      });
     }
     const row = item as Record<string, unknown>;
-    const n = canonicalizeIngredientName(asString(row.name));
+    const n = asString(row.name);
     if (!n) throw new Error('INVALID_INGREDIENT');
     const amountRaw = asString(row.amount);
-    return {
+    return expandIngredientRow({
       name: n,
       type: normalizeIngredientType(asString(row.type, '主料') || '主料'),
       required: row.required === undefined ? true : Boolean(row.required),
       amount: amountRaw || '适量',
-    };
+    });
   });
+  if (ingredients.length === 0) throw new Error('EMPTY_INGREDIENTS');
 
   const steps = Array.isArray(obj.steps)
     ? obj.steps.map((s) => asString(s)).filter(Boolean)

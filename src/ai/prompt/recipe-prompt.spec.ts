@@ -36,6 +36,14 @@ describe('recipe prompt (T-AI-02)', () => {
     expect(user).toMatch(/Only real existing dish names/i);
   });
 
+  it('forbids compound ingredient names with + (TR-AI-007)', () => {
+    const system = buildRecipeSystemPrompt();
+    expect(system).toContain('八角1颗+桂皮1小段');
+    expect(system).toMatch(/exactly one ingredient/i);
+    const user = buildRecipeUserPrompt(['鸡肉']);
+    expect(user).toContain('八角1颗+桂皮1小段');
+  });
+
   it('includes ingredient list in user prompt', () => {
     const user = buildRecipeUserPrompt(['鸡肉', '土豆']);
     expect(user).toContain('鸡肉');
