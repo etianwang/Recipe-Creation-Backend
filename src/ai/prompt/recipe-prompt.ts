@@ -29,7 +29,8 @@ export function buildRecipeSystemPrompt(): string {
     'Prefer canonical Chinese ingredient names (e.g. 番茄 not 西红柿, 西蓝花 not 西兰花, 生姜 not 姜, 大葱 not 葱).',
     'Set required=true only for core 主料 that define the dish; 辅料/调料/香料/饮品 should use required=false so match score reflects real coverage.',
     'For each recipe, include substitutes for any ingredients the user may lack (from → alternative list with score).',
-    'Prefer common, home-cookable Chinese or well-known dishes. The user ingredients should appear as 主料/辅料 when possible; do not invent bizarre fusion dishes that ignore the pantry.',
+    'Prefer common home-cookable dishes: Chinese, Western, Japanese, Korean, Southeast Asian, Middle Eastern, and other everyday cuisines are all welcome. Across the batch, mix cuisines when the pantry fits — do NOT force Chinese-only.',
+    'CRITICAL: Only recommend real, well-known existing dishes (classic home recipes people actually cook and recognize by name). Do NOT invent novel/fusion dishes just to use the listed ingredients. Do NOT mash unrelated ingredients into one plate (e.g. never invent names like 「香料蒸蟹配千张午餐肉饼」). If some user ingredients do not fit a real dish, leave them unused — matching pantry is secondary to dish authenticity.',
     'Every recipe ingredient list must include clear type labels and realistic amounts.',
   ].join('\n');
 }
@@ -45,6 +46,8 @@ export function buildRecipeUserPrompt(
     `Task: propose ${n} distinct cookable recipes as JSON matching the schema (recipes array).`,
     'Each recipe must include ingredient amounts (e.g. "200g", "2个", "适量") and at least 3 steps.',
     `ingredient.type must be one of: ${ALLOWED_INGREDIENT_TYPES.join(' / ')}.`,
+    'Include home classics from any cuisine that fit these ingredients (not Chinese-only).',
+    'Only real existing dish names; do not invent weird mash-up recipes to use every ingredient.',
     'Sort recipes by confidence descending.',
   ].join('\n');
 }

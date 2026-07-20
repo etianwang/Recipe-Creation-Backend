@@ -2,6 +2,7 @@ import { Body, Controller, Get, Headers, HttpCode, Post } from '@nestjs/common';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import { AppError, ErrorCodes } from '../common/errors';
+import { PurgeAiService, type PurgeAiOptions } from './purge-ai.service';
 
 type SeedBody = {
   minimal?: boolean;
@@ -16,12 +17,21 @@ export class SystemController {
   private lastResult: Record<string, unknown> | null = null;
   private lastError: string | null = null;
 
+  constructor(private readonly purgeAi: PurgeAiService) {}
+
   private assertSeedApiEnabled(): void {
     if (
       process.env.NODE_ENV === 'production' &&
       process.env.ENABLE_SEED_API !== '1'
     ) {
       throw new AppError(ErrorCodes.INVALID_PARAM, 'Not found', 404);
+    }
+  }
+
+  private assertSeedToken(token: string | undefined): void {
+    const secret = process.env.SEED_SECRET;
+    if (!secret || token !== secret) {
+      throw new AppError(ErrorCodes.UNAUTHORIZED, 'Invalid seed token', 401);
     }
   }
 
@@ -32,11 +42,7 @@ export class SystemController {
     @Body() body: SeedBody = {},
   ) {
     this.assertSeedApiEnabled();
-
-    const secret = process.env.SEED_SECRET;
-    if (!secret || token !== secret) {
-      throw new AppError(ErrorCodes.UNAUTHORIZED, 'Invalid seed token', 401);
-    }
+    this.assertSeedToken(token);
 
     if (this.running) {
       return {
@@ -66,14 +72,28 @@ export class SystemController {
     };
   }
 
+  /**
+   * Delete AI-sourced recipes + AI cache/logs so the next recommend can
+   * regenerate under the current prompt rules.
+   * Same gate as seed: ENABLE_SEED_API=1 + x-seed-token.
+   */
+  @Post('purge-ai')
+  @HttpCode(200)
+  async purgeAiRecipes(
+    @Headers('x-seed-token') token: string | undefined,
+    @Body() body: PurgeAiOptions = {},
+  ) {
+    this.assertSeedApiEnabled();
+    this.assertSeedToken(token);
+
+    const data = await this.purgeAi.purge(body);
+    return { code: 0, message: 'ok', data };
+  }
+
   @Get('seed/status')
   status(@Headers('x-seed-token') token: string | undefined) {
     this.assertSeedApiEnabled();
-
-    const secret = process.env.SEED_SECRET;
-    if (!secret || token !== secret) {
-      throw new AppError(ErrorCodes.UNAUTHORIZED, 'Invalid seed token', 401);
-    }
+    this.assertSeedToken(token);
     return {
       code: 0,
       message: 'ok',
