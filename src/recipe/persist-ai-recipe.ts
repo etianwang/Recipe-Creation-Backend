@@ -22,21 +22,26 @@ export function mapMaterialType(type: string): MaterialType {
       return MaterialType.SEASONING;
     case '香料':
       return MaterialType.SPICE;
+    case '饮品':
+      return MaterialType.OTHER;
     default:
       return MaterialType.OTHER;
   }
 }
 
 export function guessIngredientCategory(type: string): IngredientCategory {
-  switch (mapMaterialType(type)) {
-    case MaterialType.MAIN:
+  switch (type.trim()) {
+    case '主料':
       return IngredientCategory.MAIN;
-    case MaterialType.SIDE:
+    case '辅料':
       return IngredientCategory.SIDE;
-    case MaterialType.SEASONING:
+    case '调料':
+    case '调味料':
       return IngredientCategory.SEASONING;
-    case MaterialType.SPICE:
+    case '香料':
       return IngredientCategory.SPICE;
+    case '饮品':
+      return IngredientCategory.DRINK;
     default:
       return IngredientCategory.SIDE;
   }
@@ -93,6 +98,7 @@ export async function persistOneAiRecipe(
       tx,
       ingName,
       guessIngredientCategory(item.type),
+      { source: KnowledgeSource.AI },
     );
     // 用户本次提供的食材为必选，其余可选 → 同组合再次搜索匹配度易于 >40%
     const required =
@@ -115,6 +121,7 @@ export async function persistOneAiRecipe(
         tx,
         qName,
         IngredientCategory.MAIN,
+        { source: KnowledgeSource.AI },
       );
       ingredientIds.push({
         id: row.id,
@@ -146,12 +153,14 @@ export async function persistOneAiRecipe(
         tx,
         sub.from.trim(),
         IngredientCategory.SEASONING,
+        { source: KnowledgeSource.AI },
       );
       for (const to of sub.to) {
         const toRow = await ensureIngredientByName(
           tx,
           to.name.trim(),
           IngredientCategory.SEASONING,
+          { source: KnowledgeSource.AI },
         );
         await tx.ingredientSubstitute.upsert({
           where: {

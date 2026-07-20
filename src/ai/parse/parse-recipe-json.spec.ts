@@ -23,11 +23,21 @@ describe('parseRecipeJson (T-AI-03)', () => {
     expect(() => parseRecipeJson('not-json')).toThrow('INVALID_JSON');
   });
 
-  it('accepts fenced JSON', () => {
+  it('normalizes invalid type and aliases ingredient names', () => {
     const recipe = parseRecipeJson(
-      '```json\n{"name":"汤","ingredients":["水"],"steps":[],"substitutes":[],"confidence":80}\n```',
+      JSON.stringify({
+        name: '西红柿炒蛋',
+        ingredients: [
+          { name: '西红柿', type: '其他', required: true, amount: '2个' },
+          { name: '鸡蛋', type: '调味料', required: true, amount: '2个' },
+        ],
+        steps: ['炒'],
+        substitutes: [],
+        confidence: 0.8,
+      }),
     );
-    expect(recipe.name).toBe('汤');
-    expect(recipe.confidence).toBe(0.8);
+    expect(recipe.ingredients[0].name).toBe('番茄');
+    expect(recipe.ingredients[0].type).toBe('辅料');
+    expect(recipe.ingredients[1].type).toBe('调料');
   });
 });

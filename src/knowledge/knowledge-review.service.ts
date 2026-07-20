@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   IngredientCategory,
+  KnowledgeSource,
   Prisma,
   ReviewKind,
   ReviewStatus,
@@ -162,6 +163,7 @@ export class KnowledgeReviewService {
         category,
         taste: body.taste?.trim() || null,
         description: body.description?.trim() || null,
+        source: KnowledgeSource.MANUAL,
       },
       update: {
         category,

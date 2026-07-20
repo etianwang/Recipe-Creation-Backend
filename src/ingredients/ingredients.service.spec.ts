@@ -78,6 +78,7 @@ describe('IngredientsService', () => {
       category: IngredientCategory.MAIN,
       taste: null,
       description: null,
+      source: 'MANUAL',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
     });
     const created = await service.create({
@@ -85,12 +86,14 @@ describe('IngredientsService', () => {
       category: IngredientCategory.MAIN,
     });
     expect(created.name).toBe('土豆');
+    expect(created.source).toBe('MANUAL');
     expect(prisma.ingredient.create).toHaveBeenCalledWith({
       data: {
         name: '土豆',
         category: IngredientCategory.MAIN,
         taste: null,
         description: null,
+        source: 'MANUAL',
       },
     });
   });

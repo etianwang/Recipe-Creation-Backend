@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   Ingredient,
   IngredientCategory,
+  KnowledgeSource,
   Prisma,
   ReviewKind,
   ReviewStatus,
@@ -21,6 +22,8 @@ export type IngredientView = {
   categoryLabel: string;
   taste: string | null;
   description: string | null;
+  /** MANUAL | AI — AI 为推荐落库自动新建 */
+  source: KnowledgeSource;
   createdAt: string;
 };
 
@@ -43,6 +46,7 @@ export class IngredientsService {
       categoryLabel: categoryLabel(row.category),
       taste: row.taste,
       description: row.description,
+      source: row.source,
       createdAt: row.createdAt.toISOString(),
     };
   }
@@ -98,6 +102,7 @@ export class IngredientsService {
           category: dto.category,
           taste: dto.taste?.trim() || null,
           description: dto.description?.trim() || null,
+          source: KnowledgeSource.MANUAL,
         },
       });
       return this.toView(row);

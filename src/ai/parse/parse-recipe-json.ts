@@ -1,3 +1,6 @@
+import { ALLOWED_INGREDIENT_TYPES } from '../prompt/recipe-prompt';
+import { canonicalizeIngredientName } from '../../ingredients/ingredient-resolve';
+
 export type ParsedIngredient = {
   name: string;
   type: string;
@@ -17,6 +20,18 @@ export type ParsedRecipe = {
   substitutes: ParsedSubstitute[];
   confidence: number;
 };
+
+const ALLOWED_TYPE_SET = new Set<string>(ALLOWED_INGREDIENT_TYPES);
+
+/** 将 AI 输出的 type 收敛到允许的分类；非法值回落为「辅料」 */
+export function normalizeIngredientType(raw: string): string {
+  const t = raw.trim();
+  if (!t) return '主料';
+  if (t === '调味料') return '调料';
+  if (ALLOWED_TYPE_SET.has(t)) return t;
+  if (/^other$/i.test(t) || t === '其他' || t === '其它') return '辅料';
+  return '辅料';
+}
 
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value.trim() : fallback;
@@ -53,15 +68,20 @@ export function parseRecipeObject(data: unknown): ParsedRecipe {
 
   const ingredients: ParsedIngredient[] = ingredientsRaw.map((item) => {
     if (typeof item === 'string') {
-      return { name: item.trim(), type: '主料', required: true, amount: '适量' };
+      return {
+        name: canonicalizeIngredientName(item),
+        type: '主料',
+        required: true,
+        amount: '适量',
+      };
     }
     const row = item as Record<string, unknown>;
-    const n = asString(row.name);
+    const n = canonicalizeIngredientName(asString(row.name));
     if (!n) throw new Error('INVALID_INGREDIENT');
     const amountRaw = asString(row.amount);
     return {
       name: n,
-      type: asString(row.type, '主料') || '主料',
+      type: normalizeIngredientType(asString(row.type, '主料') || '主料'),
       required: row.required === undefined ? true : Boolean(row.required),
       amount: amountRaw || '适量',
     };
@@ -75,14 +95,15 @@ export function parseRecipeObject(data: unknown): ParsedRecipe {
   const substitutes: ParsedSubstitute[] = substitutesRaw
     .map((item) => {
       const row = item as Record<string, unknown>;
-      const from = asString(row.from);
+      const from = canonicalizeIngredientName(asString(row.from));
       const toRaw = Array.isArray(row.to) ? row.to : [];
       const to = toRaw
         .map((t) => {
-          if (typeof t === 'string') return { name: t.trim(), score: 50 };
+          if (typeof t === 'string')
+            return { name: canonicalizeIngredientName(t), score: 50 };
           const tr = t as Record<string, unknown>;
           return {
-            name: asString(tr.name),
+            name: canonicalizeIngredientName(asString(tr.name)),
             score: Number(tr.score ?? 50),
           };
         })

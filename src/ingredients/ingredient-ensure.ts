@@ -1,6 +1,7 @@
 import {
   Ingredient,
   IngredientCategory,
+  KnowledgeSource,
   Prisma,
 } from '@prisma/client';
 import { canonicalizeIngredientName } from './ingredient-resolve';
@@ -16,6 +17,7 @@ type IngredientClient = {
         category: IngredientCategory;
         taste?: string | null;
         description?: string | null;
+        source?: KnowledgeSource;
       };
     }) => Promise<Ingredient>;
   };
@@ -28,12 +30,16 @@ function isUniqueNameConflict(err: unknown): boolean {
   );
 }
 
-/** 并发安全：先查后建，唯一键冲突时再读一次 */
+/** 并发安全：先查后建，唯一键冲突时再读一次；名称经同义名规范化 */
 export async function ensureIngredientByName(
   db: IngredientClient,
   rawName: string,
   category: IngredientCategory,
-  extras?: { taste?: string | null; description?: string | null },
+  extras?: {
+    taste?: string | null;
+    description?: string | null;
+    source?: KnowledgeSource;
+  },
 ): Promise<Ingredient> {
   const name = canonicalizeIngredientName(rawName);
   if (!name) {
@@ -50,6 +56,7 @@ export async function ensureIngredientByName(
         category,
         taste: extras?.taste?.trim() || null,
         description: extras?.description?.trim() || null,
+        source: extras?.source ?? KnowledgeSource.MANUAL,
       },
     });
   } catch (err) {

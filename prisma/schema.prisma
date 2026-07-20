@@ -81,12 +81,15 @@ model Ingredient {
   category    IngredientCategory
   taste       String?            @db.VarChar(64)
   description String?            @db.Text
+  /** MANUAL=种子/用户审核；AI=推荐落库时自动新建，便于清理乱名 */
+  source      KnowledgeSource    @default(MANUAL)
   createdAt   DateTime           @default(now()) @map("created_at")
 
   recipeMaterials RecipeMaterial[]
   substitutesFrom IngredientSubstitute[] @relation("SubstituteFrom")
   substitutesTo   IngredientSubstitute[] @relation("SubstituteTo")
 
+  @@index([source])
   @@map("ingredients")
 }
 
