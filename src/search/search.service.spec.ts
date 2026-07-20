@@ -78,7 +78,8 @@ describe('SearchService', () => {
     expect(result.source).toBe('database');
     expect(result.items[0]?.name).toBe('土豆青椒炒鸡');
     expect(result.items[0]?.missing).toContain('胡椒粉');
-    expect(result.items[0]?.score).toBeCloseTo(66.67, 1);
+    // 2/3 材料命中 ×0.75 + 2/2 用户食材利用率 ×0.25 = 50+25 = 75
+    expect(result.items[0]?.score).toBeCloseTo(75, 0);
     expect(result.queryHash).toBeTruthy();
   });
 

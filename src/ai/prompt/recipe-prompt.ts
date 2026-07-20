@@ -29,6 +29,8 @@ export function buildRecipeSystemPrompt(): string {
     'Prefer canonical Chinese ingredient names (e.g. 番茄 not 西红柿, 西蓝花 not 西兰花, 生姜 not 姜, 大葱 not 葱).',
     'Set required=true only for core 主料 that define the dish; 辅料/调料/香料/饮品 should use required=false so match score reflects real coverage.',
     'For each recipe, include substitutes for any ingredients the user may lack (from → alternative list with score).',
+    'Prefer common, home-cookable Chinese or well-known dishes. The user ingredients should appear as 主料/辅料 when possible; do not invent bizarre fusion dishes that ignore the pantry.',
+    'Every recipe ingredient list must include clear type labels and realistic amounts.',
   ].join('\n');
 }
 
