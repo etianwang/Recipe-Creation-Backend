@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import type { ParsedRecipe } from '../ai/parse/parse-recipe-json';
 import { isSafeIngredientCombination } from '../common/food-safety';
+import { ensureIngredientByName } from '../ingredients/ingredient-ensure';
 
 export function mapMaterialType(type: string): MaterialType {
   switch (type) {
@@ -83,14 +84,11 @@ export async function persistOneAiRecipe(
   for (const item of recipe.ingredients) {
     const ingName = item.name.trim();
     if (!ingName) continue;
-    const row = await tx.ingredient.upsert({
-      where: { name: ingName },
-      create: {
-        name: ingName,
-        category: guessIngredientCategory(item.type),
-      },
-      update: {},
-    });
+    const row = await ensureIngredientByName(
+      tx,
+      ingName,
+      guessIngredientCategory(item.type),
+    );
     ingredientIds.push({
       id: row.id,
       type: mapMaterialType(item.type),
@@ -116,23 +114,17 @@ export async function persistOneAiRecipe(
 
   if (Array.isArray(recipe.substitutes)) {
     for (const sub of recipe.substitutes) {
-      const from = await tx.ingredient.upsert({
-        where: { name: sub.from.trim() },
-        create: {
-          name: sub.from.trim(),
-          category: IngredientCategory.SEASONING,
-        },
-        update: {},
-      });
+      const from = await ensureIngredientByName(
+        tx,
+        sub.from.trim(),
+        IngredientCategory.SEASONING,
+      );
       for (const to of sub.to) {
-        const toRow = await tx.ingredient.upsert({
-          where: { name: to.name.trim() },
-          create: {
-            name: to.name.trim(),
-            category: IngredientCategory.SEASONING,
-          },
-          update: {},
-        });
+        const toRow = await ensureIngredientByName(
+          tx,
+          to.name.trim(),
+          IngredientCategory.SEASONING,
+        );
         await tx.ingredientSubstitute.upsert({
           where: {
             ingredientId_substituteId: {
