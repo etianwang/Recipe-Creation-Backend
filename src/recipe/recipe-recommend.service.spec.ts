@@ -4,6 +4,7 @@ import { RecipeRecommendService } from './recipe-recommend.service';
 import { SearchService } from '../search/search.service';
 import { AiRecipeService } from '../ai/ai-recipe.service';
 import { RECOMMEND_DB_SCAN_LIMIT } from './recommend.types';
+import { computeQueryHash } from '../search/query-hash';
 
 describe('RecipeRecommendService', () => {
   let service: RecipeRecommendService;
@@ -385,5 +386,67 @@ describe('RecipeRecommendService', () => {
 
     expect(result.items).toEqual([]);
     expect(result.source).toBe('database');
+  });
+
+  it('schedules background live AI when asyncLiveAi is true', async () => {
+    searchService.recommendFromDatabase.mockResolvedValue({
+      queryHash: 'hash',
+      normalizedIngredients: ['土豆', '排骨', '番茄', '红薯'],
+      items: [],
+    });
+    aiRecipeService.loadFromCacheOnly.mockResolvedValue(null);
+    aiRecipeService.generateOrLoad.mockResolvedValue({
+      queryHash: 'hash',
+      normalizedIngredients: ['土豆', '排骨', '番茄', '红薯'],
+      recipes: [],
+      recipe: { name: 'test' },
+      source: 'ai',
+    });
+
+    const result = await service.recommend(
+      ['土豆', '排骨', '番茄', '红薯'],
+      { asyncLiveAi: true },
+    );
+
+    await Promise.resolve();
+    expect(aiRecipeService.generateOrLoad).toHaveBeenCalled();
+    expect(result.aiPending).toBe(true);
+    expect(result.items).toEqual([]);
+  });
+
+  it('poll reports pending while background AI is running', async () => {
+    const names = ['土豆'];
+    const queryHash = computeQueryHash(names);
+    searchService.recommendFromDatabase.mockResolvedValue({
+      queryHash,
+      normalizedIngredients: names,
+      items: [],
+    });
+    aiRecipeService.loadFromCacheOnly.mockResolvedValue(null);
+    aiRecipeService.generateOrLoad.mockReturnValue(new Promise(() => {}));
+
+    await service.recommend(names, { asyncLiveAi: true });
+    const poll = await service.pollRecommend(names);
+
+    expect(poll.aiPending).toBe(true);
+  });
+
+  it('skips live AI when skipLiveAi is true', async () => {
+    searchService.recommendFromDatabase.mockResolvedValue({
+      queryHash: 'hash',
+      normalizedIngredients: ['土豆', '排骨', '番茄', '红薯'],
+      items: [],
+    });
+    aiRecipeService.loadFromCacheOnly.mockResolvedValue(null);
+
+    const result = await service.recommend(
+      ['土豆', '排骨', '番茄', '红薯'],
+      { skipLiveAi: true },
+    );
+
+    expect(aiRecipeService.loadFromCacheOnly).toHaveBeenCalled();
+    expect(aiRecipeService.generateOrLoad).not.toHaveBeenCalled();
+    expect(result.items).toEqual([]);
+    expect(result.aiPending).toBe(false);
   });
 });

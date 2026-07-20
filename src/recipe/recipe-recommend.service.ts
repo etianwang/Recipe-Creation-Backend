@@ -5,6 +5,10 @@ import { AiRecipeService } from '../ai/ai-recipe.service';
 import { buildDbRecipeDetail } from './recipe-detail';
 import { buildDetailFromParsed } from './recipe-detail-parsed';
 import {
+  computeQueryHash,
+  normalizeIngredientNames,
+} from '../search/query-hash';
+import {
   RECOMMEND_DB_QUALIFY_SCORE,
   RECOMMEND_DB_SCAN_LIMIT,
   RECOMMEND_TOP_N,
@@ -38,9 +42,17 @@ function mapDbItems(
   });
 }
 
+export type RecommendOptions = {
+  /** 不调用大模型（轮询/只读刷新） */
+  skipLiveAi?: boolean;
+  /** callContainer 15s 限制：后台调 AI，先返回部分结果 */
+  asyncLiveAi?: boolean;
+};
+
 @Injectable()
 export class RecipeRecommendService {
   private readonly logger = new Logger(RecipeRecommendService.name);
+  private readonly liveAiInFlight = new Set<string>();
 
   constructor(
     private readonly searchService: SearchService,
@@ -58,7 +70,35 @@ export class RecipeRecommendService {
     return mapDbItems(hits, aiDetails);
   }
 
-  async recommend(ingredientNames: string[]): Promise<RecommendResponse> {
+  isLiveAiInFlight(queryHash: string): boolean {
+    return this.liveAiInFlight.has(queryHash);
+  }
+
+  private scheduleLiveAi(ingredientNames: string[]): void {
+    const normalized = normalizeIngredientNames(ingredientNames);
+    if (normalized.length === 0) return;
+
+    const queryHash = computeQueryHash(normalized);
+    if (this.liveAiInFlight.has(queryHash)) return;
+
+    this.liveAiInFlight.add(queryHash);
+    const want = RECOMMEND_TOP_N;
+    void this.aiRecipeService
+      .generateOrLoad(ingredientNames, { recipeCount: want })
+      .catch((err) => {
+        this.logger.warn(
+          `background live AI failed: ${err instanceof Error ? err.message : err}`,
+        );
+      })
+      .finally(() => {
+        this.liveAiInFlight.delete(queryHash);
+      });
+  }
+
+  async recommend(
+    ingredientNames: string[],
+    options?: RecommendOptions,
+  ): Promise<RecommendResponse> {
     let db = await this.searchService.recommendFromDatabase(
       ingredientNames,
       RECOMMEND_DB_SCAN_LIMIT,
@@ -71,6 +111,9 @@ export class RecipeRecommendService {
 
     let aiSource: 'cache' | 'ai' | null = null;
     const needAi = items.length < RECOMMEND_TOP_N;
+    const skipLiveAi =
+      options?.skipLiveAi === true || process.env.RECOMMEND_LIVE_AI === '0';
+    const asyncLiveAi = options?.asyncLiveAi === true;
 
     if (needAi) {
       const cached =
@@ -91,7 +134,19 @@ export class RecipeRecommendService {
         items = await this.buildItemsFromDb(qualified);
       }
 
-      if (items.length < RECOMMEND_TOP_N) {
+      if (items.length < RECOMMEND_TOP_N && !skipLiveAi) {
+        if (asyncLiveAi) {
+          this.scheduleLiveAi(ingredientNames);
+          items = items.slice(0, RECOMMEND_TOP_N);
+          return {
+            queryHash: db.queryHash,
+            normalizedIngredients: db.normalizedIngredients,
+            items,
+            source: aiSource ?? 'database',
+            aiPending: true,
+          };
+        }
+
         const want = RECOMMEND_TOP_N - items.length;
         try {
           const ai = await this.aiRecipeService.generateOrLoad(
@@ -128,6 +183,31 @@ export class RecipeRecommendService {
       normalizedIngredients: db.normalizedIngredients,
       items,
       source,
+      aiPending: false,
     };
+  }
+
+  /** 轮询：只读库+缓存；若后台 AI 已完成则返回完整列表 */
+  async pollRecommend(ingredientNames: string[]): Promise<RecommendResponse> {
+    const result = await this.recommend(ingredientNames, { skipLiveAi: true });
+    const stillNeed = result.items.length < RECOMMEND_TOP_N;
+    if (!stillNeed) {
+      return { ...result, aiPending: false };
+    }
+
+    const cached =
+      await this.aiRecipeService.loadFromCacheOnly(ingredientNames);
+    if (cached) {
+      const refreshed = await this.recommend(ingredientNames, {
+        skipLiveAi: true,
+      });
+      return { ...refreshed, aiPending: false };
+    }
+
+    if (this.isLiveAiInFlight(result.queryHash)) {
+      return { ...result, aiPending: true };
+    }
+
+    return { ...result, aiPending: false };
   }
 }

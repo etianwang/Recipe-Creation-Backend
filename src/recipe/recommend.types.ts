@@ -24,4 +24,6 @@ export type RecommendResponse = {
   normalizedIngredients: string[];
   items: RecommendItem[];
   source: 'database' | 'cache' | 'ai' | 'mixed';
+  /** callContainer 异步补 AI 时尚未完成 */
+  aiPending?: boolean;
 };
