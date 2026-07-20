@@ -11,6 +11,7 @@ import {
 import {
   RECOMMEND_DB_QUALIFY_SCORE,
   RECOMMEND_DB_SCAN_LIMIT,
+  RECOMMEND_AI_GENERATE_COUNT,
   RECOMMEND_TOP_N,
   RecommendItem,
   RecommendResponse,
@@ -87,6 +88,51 @@ export class RecipeRecommendService {
     return { db, items };
   }
 
+  private mapCachedRecipesToItems(recipes: ParsedRecipe[]): RecommendItem[] {
+    return recipes.map((recipe) => {
+      const { ingredients, steps } = buildDetailFromParsed(recipe);
+      return {
+        recipeId: null,
+        recipe: recipe.name,
+        score: Math.round((recipe.confidence ?? 0.85) * 100),
+        missing: [],
+        source: 'ai',
+        isAiSuggestion: true,
+        sourceLabel: 'AI推荐',
+        ingredients,
+        steps,
+      };
+    });
+  }
+
+  private mergeRecommendItems(
+    dbItems: RecommendItem[],
+    extra: RecommendItem[],
+  ): RecommendItem[] {
+    const seen = new Set(dbItems.map((i) => i.recipe));
+    const merged = [...dbItems];
+    for (const item of extra) {
+      if (seen.has(item.recipe)) continue;
+      seen.add(item.recipe);
+      merged.push(item);
+    }
+    return merged.slice(0, RECOMMEND_TOP_N);
+  }
+
+  private async itemsWithAiCacheFallback(
+    ingredientNames: string[],
+    dbItems: RecommendItem[],
+  ): Promise<RecommendItem[]> {
+    if (dbItems.length >= RECOMMEND_TOP_N) return dbItems;
+    const cached =
+      await this.aiRecipeService.loadFromCacheOnly(ingredientNames);
+    if (!cached?.recipes.length) return dbItems;
+    return this.mergeRecommendItems(
+      dbItems,
+      this.mapCachedRecipesToItems(cached.recipes),
+    );
+  }
+
   isLiveAiInFlight(queryHash: string): boolean {
     return this.liveAiInFlight.has(queryHash);
   }
@@ -102,11 +148,14 @@ export class RecipeRecommendService {
     if (this.liveAiInFlight.has(queryHash)) return;
 
     this.liveAiInFlight.add(queryHash);
-    const want = RECOMMEND_TOP_N;
+    const want = RECOMMEND_AI_GENERATE_COUNT;
     void this.aiRecipeService
       .generateOrLoad(ingredientNames, {
         recipeCount: want,
         skipCache: options?.skipCache,
+      })
+      .then(() => {
+        this.logger.log(`background live AI done queryHash=${queryHash}`);
       })
       .catch((err) => {
         this.logger.warn(
@@ -202,34 +251,52 @@ export class RecipeRecommendService {
   /** 轮询：只读库+缓存；若仍不足则等待或再次触发 live AI */
   async pollRecommend(ingredientNames: string[]): Promise<RecommendResponse> {
     const result = await this.recommend(ingredientNames, { skipLiveAi: true });
-    if (result.items.length >= RECOMMEND_TOP_N) {
-      return { ...result, aiPending: false };
+    let items = await this.itemsWithAiCacheFallback(
+      ingredientNames,
+      result.items,
+    );
+    if (items.length >= RECOMMEND_TOP_N) {
+      return { ...result, items, source: 'mixed', aiPending: false };
     }
 
     if (this.isLiveAiInFlight(result.queryHash)) {
-      return { ...result, aiPending: true };
+      return { ...result, items, aiPending: true };
     }
 
-    const cacheResult = await this.applyAiCache(ingredientNames);
-    if (cacheResult === 'hit') {
+    const cached =
+      await this.aiRecipeService.loadFromCacheOnly(ingredientNames);
+    if (cached) {
+      await this.aiRecipeService.ensurePersisted(
+        cached.queryHash,
+        cached.recipes,
+      );
       const refreshed = await this.recommend(ingredientNames, {
         skipLiveAi: true,
       });
-      if (refreshed.items.length >= RECOMMEND_TOP_N) {
-        return { ...refreshed, aiPending: false };
+      items = await this.itemsWithAiCacheFallback(
+        ingredientNames,
+        refreshed.items,
+      );
+      if (items.length > 0) {
+        return {
+          ...refreshed,
+          items,
+          source: items.some((i) => i.source === 'database') ? 'mixed' : 'ai',
+          aiPending: false,
+        };
       }
       if (process.env.RECOMMEND_LIVE_AI !== '0') {
         this.scheduleLiveAi(ingredientNames, { skipCache: true });
-        return { ...refreshed, aiPending: true };
+        return { ...refreshed, items, aiPending: true };
       }
-      return { ...refreshed, aiPending: false };
+      return { ...refreshed, items, aiPending: false };
     }
 
     if (process.env.RECOMMEND_LIVE_AI !== '0') {
       this.scheduleLiveAi(ingredientNames);
-      return { ...result, aiPending: true };
+      return { ...result, items, aiPending: true };
     }
 
-    return { ...result, aiPending: false };
+    return { ...result, items, aiPending: false };
   }
 }

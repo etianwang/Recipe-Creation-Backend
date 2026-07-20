@@ -32,7 +32,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
         messages: request.messages,
         temperature: request.temperature ?? 0.2,
       };
-      if (request.jsonMode) {
+      if (request.jsonMode && process.env.AI_JSON_MODE !== '0') {
         body.response_format = { type: 'json_object' };
       }
 

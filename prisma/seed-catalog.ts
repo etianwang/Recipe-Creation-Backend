@@ -1,5 +1,10 @@
 import { IngredientCategory, MaterialType } from '@prisma/client';
 import { isSafeIngredientCombination } from '../src/common/food-safety';
+import {
+  dedupeIngredients,
+  EXTENDED_INGREDIENTS_DEDUPED,
+} from './seed-ingredients-extended';
+import { INTERNATIONAL_RECIPES } from './seed-recipes-international';
 
 export type CatalogIngredient = {
   name: string;
@@ -25,8 +30,8 @@ export type SafeRecipeTemplate = {
   extraSeasonings?: string[];
 };
 
-/** 常见、可安全搭配的家常食材（不含高风险原料） */
-export const CATALOG_INGREDIENTS: CatalogIngredient[] = [
+/** 核心家常食材（minimal seed 仅用此列表） */
+export const BASE_CATALOG_INGREDIENTS: CatalogIngredient[] = [
   { name: '鸡肉', category: IngredientCategory.MAIN, taste: '鲜' },
   { name: '鸡腿', category: IngredientCategory.MAIN, taste: '鲜' },
   { name: '鸡翅', category: IngredientCategory.MAIN, taste: '鲜' },
@@ -162,13 +167,19 @@ export const CATALOG_INGREDIENTS: CatalogIngredient[] = [
   { name: '红茶', category: IngredientCategory.DRINK },
 ];
 
+/** 核心 + 扩展（500+），full seed 灌库用 */
+export const CATALOG_INGREDIENTS = dedupeIngredients([
+  ...BASE_CATALOG_INGREDIENTS,
+  ...EXTENDED_INGREDIENTS_DEDUPED,
+]);
+
 const S = MaterialType.SEASONING;
 const M = MaterialType.MAIN;
 const D = MaterialType.SIDE;
 const P = MaterialType.SPICE;
 
-/** 人工整理的经典家常菜（已通过 isSafeIngredientCombination 校验） */
-export const CATALOG_RECIPES: CatalogRecipe[] = [
+/** 人工整理的经典家常菜（中式为主） */
+const CHINESE_CATALOG_RECIPES: CatalogRecipe[] = [
   {
     name: '土豆青椒炒鸡',
     materials: [
@@ -716,6 +727,12 @@ export const CATALOG_RECIPES: CatalogRecipe[] = [
   },
 ];
 
+/** 中式 + 国际/快餐精选菜谱 */
+export const CATALOG_RECIPES: CatalogRecipe[] = [
+  ...CHINESE_CATALOG_RECIPES,
+  ...INTERNATIONAL_RECIPES,
+];
+
 // 移除引用不存在或不合规的菜谱
 function sanitizeCatalogRecipes(): CatalogRecipe[] {
   const names = new Set(CATALOG_INGREDIENTS.map((i) => i.name));
@@ -778,6 +795,66 @@ export const SAFE_RECIPE_TEMPLATES: SafeRecipeTemplate[] = [
     methods: ['炒', '烧', '凉拌', '蒸'],
     extraSeasonings: ['盐', '生抽', '醋'],
   },
+  {
+    mains: ['三文鱼', '鳕鱼', '羊排', '牛排', '培根'],
+    sides: ['蘑菇', '洋葱', '彩椒', '番茄', '土豆'],
+    methods: ['煎', '烤', '焗', '炖'],
+    extraSeasonings: ['盐', '黑胡椒', '橄榄油', '黄油'],
+  },
+  {
+    mains: ['意面', '通心粉', '薄饼', '卷饼', '汉堡面包'],
+    sides: ['番茄', '洋葱', '彩椒', '蘑菇', '马苏里拉'],
+    methods: ['煮', '烤', '焗', '卷'],
+    extraSeasonings: ['橄榄油', '大蒜', '罗勒', '帕玛森'],
+  },
+  {
+    mains: ['鹰嘴豆', '鸡肉', '羊肉'],
+    sides: ['洋葱', '胡萝卜', '番茄', '彩椒', '黄瓜'],
+    methods: ['炖', '烤', '咖喱', '拌'],
+    extraSeasonings: ['孜然', '姜黄', '咖喱粉', '酸奶'],
+  },
+  {
+    mains: ['鸡腿', '鸡胸肉', '牛肉'],
+    sides: ['生菜', '番茄', '土豆', '面包糠', '芝士片'],
+    methods: ['炸', '烤', '夹', '堡'],
+    extraSeasonings: ['盐', '番茄酱', '蛋黄酱', '黑胡椒'],
+  },
+  {
+    mains: ['米饭', '寿司米', '河粉', '乌冬面'],
+    sides: ['鸡蛋', '虾', '黄瓜', '胡萝卜', '泡菜'],
+    methods: ['炒', '卷', '拌', '汤'],
+    extraSeasonings: ['鱼露', '韩式辣酱', '芝麻油', '生抽'],
+  },
+  {
+    mains: ['鸭胸', '火鸡腿', '香肠', '火腿'],
+    sides: ['彩椒', '洋葱', '蘑菇', '土豆', '西葫芦'],
+    methods: ['炒', '煎', '烤', '炖'],
+    extraSeasonings: ['盐', '黑胡椒', '橄榄油'],
+  },
+  {
+    mains: ['鱿鱼', '章鱼', '墨鱼', '蛤蜊', '扇贝'],
+    sides: ['大蒜', '生姜', '大葱', '西芹', '彩椒'],
+    methods: ['炒', '蒸', '烧', '煮'],
+    extraSeasonings: ['料酒', '生抽', '盐'],
+  },
+  {
+    mains: ['年糕', '面条', '挂面', '米粉'],
+    sides: ['白菜', '菠菜', '番茄', '鸡蛋', '豆芽'],
+    methods: ['炒', '煮', '汤', '拌'],
+    extraSeasonings: ['盐', '生抽', '香油'],
+  },
+  {
+    mains: ['包菜', '娃娃菜', '油麦菜', '空心菜', '芥蓝'],
+    sides: ['大蒜', '生姜', '彩椒', '蘑菇', '胡萝卜'],
+    methods: ['炒', '凉拌', '蒸', '灼'],
+    extraSeasonings: ['盐', '蚝油', '生抽'],
+  },
+  {
+    mains: ['可颂', '吐司', '法棍', '贝果'],
+    sides: ['火腿', '芝士片', '生菜', '番茄', '培根'],
+    methods: ['烤', '夹', '配', '热压'],
+    extraSeasonings: ['黄油', '蛋黄酱', '黑胡椒'],
+  },
 ];
 
 const DEFAULT_SEASONINGS = ['盐', '生抽', '大蒜', '生姜', '料酒'];
@@ -795,26 +872,25 @@ export function buildSafeBulkRecipes(target: number): CatalogRecipe[] {
       for (const side of tpl.sides) {
         if (main === side) continue;
         for (const method of tpl.methods) {
-          const baseName = `${main}${side}${method}`;
-          let name = baseName;
-          if (seen.has(name)) {
-            name = `${baseName}·${seq}`;
-            seq += 1;
+          for (const seasoning of seasonings) {
+            const baseName = `${main}${side}${method}`;
+            let name = baseName;
+            if (seen.has(name)) {
+              name = `${baseName}·${seq}`;
+              seq += 1;
+            }
+            const materials: CatalogMaterial[] = [
+              { name: main, type: M, required: true },
+              { name: side, type: D, required: true },
+              { name: seasoning, type: S, required: true },
+            ];
+            const names = materials.map((m) => m.name);
+            if (!isSafeIngredientCombination(names)) continue;
+            if (seen.has(name)) continue;
+            seen.add(name);
+            out.push({ name, materials });
+            if (out.length >= target) break outer;
           }
-          const materials: CatalogMaterial[] = [
-            { name: main, type: M, required: true },
-            { name: side, type: D, required: true },
-            {
-              name: seasonings[out.length % seasonings.length],
-              type: S,
-              required: true,
-            },
-          ];
-          const names = materials.map((m) => m.name);
-          if (!isSafeIngredientCombination(names)) continue;
-          if (seen.has(name)) continue;
-          seen.add(name);
-          out.push({ name, materials });
           if (out.length >= target) break outer;
         }
       }

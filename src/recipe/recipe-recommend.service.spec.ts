@@ -413,7 +413,7 @@ describe('RecipeRecommendService', () => {
     await Promise.resolve();
     expect(aiRecipeService.generateOrLoad).toHaveBeenCalledWith(
       ['土豆', '排骨', '番茄', '红薯'],
-      expect.objectContaining({ recipeCount: 5 }),
+      expect.objectContaining({ recipeCount: 2 }),
     );
     expect(result.aiPending).toBe(true);
     expect(result.items).toEqual([]);

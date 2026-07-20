@@ -9,21 +9,21 @@ import {
 import { buildCoreSubstitutes } from './core-substitutes';
 import { isSafeIngredientCombination } from '../src/common/food-safety';
 import {
+  BASE_CATALOG_INGREDIENTS,
   buildIngredientCatalog,
   buildSafeBulkRecipes,
-  CATALOG_INGREDIENTS,
   SAFE_CATALOG_RECIPES,
   type CatalogRecipe,
 } from './seed-catalog';
 
 const prisma = new PrismaClient();
 
-const TARGET_INGREDIENTS = Number(process.env.SEED_INGREDIENTS ?? 200);
-const TARGET_RECIPES = Number(process.env.SEED_RECIPES ?? 800);
+const TARGET_INGREDIENTS = Number(process.env.SEED_INGREDIENTS ?? 500);
+const TARGET_RECIPES = Number(process.env.SEED_RECIPES ?? 1500);
 const TARGET_SUBSTITUTES = Number(process.env.SEED_SUBSTITUTES ?? 1500);
 const SEED_MINIMAL = process.env.SEED_MINIMAL === '1';
 
-const coreIngredients = CATALOG_INGREDIENTS;
+const coreIngredients = BASE_CATALOG_INGREDIENTS;
 const coreRecipes = SAFE_CATALOG_RECIPES;
 
 const coreSubstitutes = buildCoreSubstitutes(
