@@ -47,6 +47,20 @@ export function guessIngredientCategory(type: string): IngredientCategory {
   }
 }
 
+/** AI 材料是否计入匹配度必选：主料必选；调料/香料/饮品可选；辅料跟 AI 的 required */
+export function isAiMaterialRequired(item: {
+  type: string;
+  required?: boolean;
+}): boolean {
+  const type = item.type.trim();
+  if (type === '主料') return true;
+  if (type === '调料' || type === '调味料' || type === '香料' || type === '饮品') {
+    return false;
+  }
+  // 辅料及其他：尊重 AI 的 required（默认 true）
+  return item.required !== false;
+}
+
 type Tx = Omit<
   PrismaClient,
   '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
@@ -57,16 +71,12 @@ export async function persistOneAiRecipe(
   tx: Tx,
   recipe: ParsedRecipe,
   queryHash: string,
-  queryIngredients: string[] = [],
+  _queryIngredients: string[] = [],
 ): Promise<string> {
   const name = recipe.name.trim();
   if (!name || !Array.isArray(recipe.ingredients)) {
     throw new Error('Invalid AI recipe');
   }
-
-  const querySet = new Set(
-    queryIngredients.map((n) => n.trim()).filter(Boolean),
-  );
 
   const existing = await tx.recipe.findFirst({ where: { name } });
   if (existing) {
@@ -100,35 +110,11 @@ export async function persistOneAiRecipe(
       guessIngredientCategory(item.type),
       { source: KnowledgeSource.AI },
     );
-    // 用户本次提供的食材为必选，其余可选 → 同组合再次搜索匹配度易于 >40%
-    const required =
-      querySet.size > 0 ? querySet.has(ingName) : item.required !== false;
     ingredientIds.push({
       id: row.id,
       type: mapMaterialType(item.type),
-      required,
+      required: isAiMaterialRequired(item),
     });
-  }
-
-  // 若 AI 未包含任何用户食材，至少把用户食材挂为必选，避免无法命中
-  if (querySet.size > 0) {
-    const linkedNames = new Set(
-      recipe.ingredients.map((i) => i.name.trim()).filter(Boolean),
-    );
-    for (const qName of querySet) {
-      if (linkedNames.has(qName)) continue;
-      const row = await ensureIngredientByName(
-        tx,
-        qName,
-        IngredientCategory.MAIN,
-        { source: KnowledgeSource.AI },
-      );
-      ingredientIds.push({
-        id: row.id,
-        type: MaterialType.MAIN,
-        required: true,
-      });
-    }
   }
 
   const created = await tx.recipe.create({
