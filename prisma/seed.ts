@@ -211,23 +211,7 @@ async function main() {
   console.log(`Upserting ${catalog.length} ingredients...`);
   const ingredientMap = new Map<string, string>();
 
-  await chunkedCreateMany('ingredients', catalog, 100, async (batch) => {
-    await prisma.ingredient.createMany({
-      data: batch.map((item) => ({
-        name: item.name,
-        category: item.category,
-        taste: item.taste ?? null,
-      })),
-      skipDuplicates: true,
-    });
-  });
-
-  const allIngredients = await prisma.ingredient.findMany({
-    select: { id: true, name: true, category: true },
-  });
-  for (const row of allIngredients) ingredientMap.set(row.name, row.id);
-
-  for (const item of coreIngredients) {
+  for (const item of catalog) {
     const row = await prisma.ingredient.upsert({
       where: { name: item.name },
       create: {
@@ -242,6 +226,11 @@ async function main() {
     });
     ingredientMap.set(row.name, row.id);
   }
+
+  const allIngredients = await prisma.ingredient.findMany({
+    select: { id: true, name: true, category: true },
+  });
+  for (const row of allIngredients) ingredientMap.set(row.name, row.id);
 
   console.log('Seeding curated safe recipes...');
   await seedRecipes(coreRecipes, ingredientMap);
