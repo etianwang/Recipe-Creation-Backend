@@ -207,7 +207,7 @@ function startNest(env) {
   });
   child.on('exit', (code, signal) => {
     upstreamReady = false;
-    lastError = `Nest exited code=${code} signal=${signal || ''}`;
+    lastError = `Nest exited code=${code} signal=${signal || ''}. 向上滚动查看 [bootstrap] failed 或 [AiModule] 日志`;
     bootPhase = 'nest_crashed';
     log('ERROR:', lastError);
   });

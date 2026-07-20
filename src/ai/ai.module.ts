@@ -54,17 +54,26 @@ function createAiProvider() {
   }
 
   if (mode === 'openai' || mode === 'openai-compatible') {
-    const apiKey = process.env.AI_API_KEY || '';
+    const apiKey =
+      process.env.AI_API_KEY ||
+      process.env.DASHSCOPE_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      '';
     if (!apiKey) {
-      requireProdAiConfig('OpenAI API key required in production');
+      requireProdAiConfig(
+        'OpenAI-compatible API key required (set AI_API_KEY or DASHSCOPE_API_KEY)',
+      );
       return new FakeAiProvider();
     }
-    return new OpenAiCompatibleProvider(
-      apiKey,
-      process.env.AI_BASE_URL || 'https://api.openai.com/v1',
-      process.env.AI_MODEL || 'gpt-4o-mini',
-      timeoutMs,
+    const baseUrl =
+      process.env.AI_BASE_URL ||
+      process.env.OPENAI_BASE_URL ||
+      'https://api.openai.com/v1';
+    const model = process.env.AI_MODEL || 'gpt-4o-mini';
+    console.log(
+      `[AiModule] provider=openai-compatible model=${model} baseUrl=${baseUrl}`,
     );
+    return new OpenAiCompatibleProvider(apiKey, baseUrl, model, timeoutMs);
   }
 
   if (isProd) {
