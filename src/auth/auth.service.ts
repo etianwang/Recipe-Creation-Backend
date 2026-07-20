@@ -69,18 +69,31 @@ export class AuthService {
       throw new AppError(ErrorCodes.UNAUTHORIZED, 'Missing openid', 401);
     }
 
+    const user = await this.findOrCreateByOpenid(openid);
+    return this.tokenResponse(user);
+  }
+
+  /** 云托管 callContainer 注入的 openid → 用户（收藏等鉴权回退） */
+  async findOrCreateByOpenid(openid: string): Promise<User> {
+    const trimmed = openid.trim();
+    if (!trimmed) {
+      throw new AppError(ErrorCodes.UNAUTHORIZED, 'Missing openid', 401);
+    }
+
     const adminOpenids = new Set(
       String(process.env.ADMIN_OPENIDS ?? '')
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean),
     );
-    const desiredRole = adminOpenids.has(openid) ? UserRole.ADMIN : UserRole.USER;
+    const desiredRole = adminOpenids.has(trimmed)
+      ? UserRole.ADMIN
+      : UserRole.USER;
 
-    let user = await this.prisma.user.findUnique({ where: { openid } });
+    let user = await this.prisma.user.findUnique({ where: { openid: trimmed } });
     if (!user) {
       user = await this.prisma.user.create({
-        data: { openid, role: desiredRole },
+        data: { openid: trimmed, role: desiredRole },
       });
     } else if (user.role !== desiredRole) {
       user = await this.prisma.user.update({
@@ -88,8 +101,7 @@ export class AuthService {
         data: { role: desiredRole },
       });
     }
-
-    return this.tokenResponse(user);
+    return user;
   }
 
   private tokenResponse(user: User) {

@@ -14,7 +14,7 @@ import { RecommendRecipeDto } from './dto/recommend-recipe.dto';
 import { RecipeRecommendService } from './recipe-recommend.service';
 import type { RecommendResponse } from './recommend.types';
 import { RecipeFavoritesService } from './recipe-favorites.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtOrWxAuthGuard } from '../auth/jwt-or-wx-auth.guard';
 import type { JwtPayloadUser } from '../auth/jwt-payload';
 
 function isCallContainerRequest(
@@ -80,14 +80,14 @@ export class RecipeController {
   }
 
   @Get('favorites')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrWxAuthGuard)
   async listFavorites(@Req() req: { user: JwtPayloadUser }) {
     const data = await this.favoritesService.list(req.user.sub);
     return { code: 0, message: 'ok', data };
   }
 
   @Post(':id/favorite')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrWxAuthGuard)
   @HttpCode(200)
   async addFavorite(
     @Param('id') id: string,
@@ -98,7 +98,7 @@ export class RecipeController {
   }
 
   @Delete(':id/favorite')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrWxAuthGuard)
   async removeFavorite(
     @Param('id') id: string,
     @Req() req: { user: JwtPayloadUser },
