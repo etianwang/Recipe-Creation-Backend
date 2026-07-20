@@ -2,7 +2,9 @@ import { KnowledgeSource } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppError, ErrorCodes } from '../common/errors';
+import { ensureIngredientByName } from './ingredient-ensure';
 import { resolveIngredientByName } from './ingredient-resolve';
+import { guessIngredientCategory } from '../recipe/persist-ai-recipe';
 
 export type SubstituteView = {
   id: string;
@@ -19,6 +21,8 @@ export type SubstituteLookupResult = {
   ingredient: { id: string; name: string };
   /** 有别名/模糊匹配时，为用户输入的原文 */
   resolvedFrom?: string;
+  /** 本次因缺失而按 type 自动建档 */
+  created?: boolean;
   items: SubstituteView[];
 };
 
@@ -40,18 +44,44 @@ export class SubstitutesService {
     return this.listForIngredient(ingredient.id);
   }
 
-  async listByIngredientName(name: string): Promise<SubstituteLookupResult> {
-    const resolved = await resolveIngredientByName(this.prisma, name);
-    const items = await this.listForIngredient(resolved.ingredient.id);
-    return {
-      query: resolved.query,
-      ingredient: {
-        id: resolved.ingredient.id,
-        name: resolved.ingredient.name,
-      },
-      resolvedFrom: resolved.resolvedFrom,
-      items,
-    };
+  async listByIngredientName(
+    name: string,
+    typeHint?: string,
+  ): Promise<SubstituteLookupResult> {
+    try {
+      const resolved = await resolveIngredientByName(this.prisma, name);
+      const items = await this.listForIngredient(resolved.ingredient.id);
+      return {
+        query: resolved.query,
+        ingredient: {
+          id: resolved.ingredient.id,
+          name: resolved.ingredient.name,
+        },
+        resolvedFrom: resolved.resolvedFrom,
+        items,
+      };
+    } catch (err) {
+      if (
+        err instanceof AppError &&
+        err.code === ErrorCodes.NOT_FOUND_INGREDIENT &&
+        typeHint?.trim()
+      ) {
+        const row = await ensureIngredientByName(
+          this.prisma,
+          name,
+          guessIngredientCategory(typeHint),
+          { source: KnowledgeSource.AI },
+        );
+        const items = await this.listForIngredient(row.id);
+        return {
+          query: name.trim(),
+          ingredient: { id: row.id, name: row.name },
+          created: true,
+          items,
+        };
+      }
+      throw err;
+    }
   }
 
   private async listForIngredient(

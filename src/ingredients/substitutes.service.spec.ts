@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { KnowledgeSource } from '@prisma/client';
+import { IngredientCategory, KnowledgeSource } from '@prisma/client';
 import { SubstitutesService } from './substitutes.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ErrorCodes } from '../common/errors';
@@ -11,6 +11,7 @@ describe('SubstitutesService', () => {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       findMany: jest.fn(),
+      create: jest.fn(),
     },
     ingredientSubstitute: {
       findMany: jest.fn(),
@@ -76,7 +77,7 @@ describe('SubstitutesService', () => {
     expect(result.items[0].name).toBe('洋葱');
   });
 
-  it('throws Chinese message when ingredient missing', async () => {
+  it('throws Chinese message when ingredient missing and no type', async () => {
     prisma.ingredient.findFirst.mockResolvedValue(null);
     prisma.ingredient.findMany.mockResolvedValue([]);
 
@@ -84,5 +85,31 @@ describe('SubstitutesService', () => {
       code: ErrorCodes.NOT_FOUND_INGREDIENT,
       message: expect.stringContaining('食材库中暂无'),
     });
+  });
+
+  it('auto-creates AI ingredient by type when missing (TR-SUB-003)', async () => {
+    prisma.ingredient.findFirst.mockResolvedValue(null);
+    prisma.ingredient.findMany.mockResolvedValue([]);
+    prisma.ingredient.findUnique.mockResolvedValue(null);
+    prisma.ingredient.create.mockResolvedValue({
+      id: 'new-mirin',
+      name: '味醂',
+      category: IngredientCategory.SEASONING,
+      source: KnowledgeSource.AI,
+    });
+    prisma.ingredientSubstitute.findMany.mockResolvedValue([]);
+
+    const result = await service.listByIngredientName('味醂', '调料');
+
+    expect(prisma.ingredient.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: '味醂',
+        category: IngredientCategory.SEASONING,
+        source: KnowledgeSource.AI,
+      }),
+    });
+    expect(result.created).toBe(true);
+    expect(result.ingredient.name).toBe('味醂');
+    expect(result.items).toEqual([]);
   });
 });

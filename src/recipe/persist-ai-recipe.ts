@@ -66,42 +66,20 @@ type Tx = Omit<
   '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
 >;
 
-/** 将单条 AI 菜谱写入正式库（已存在同名则复用 id） */
-export async function persistOneAiRecipe(
+/** 按 AI type 分类写入缺失食材，并 upsert 替代边（不创建菜谱） */
+export async function ensureAiIngredientsAndSubstitutes(
   tx: Tx,
   recipe: ParsedRecipe,
-  queryHash: string,
-  _queryIngredients: string[] = [],
-): Promise<string> {
-  const name = recipe.name.trim();
-  if (!name || !Array.isArray(recipe.ingredients)) {
-    throw new Error('Invalid AI recipe');
-  }
-
-  const existing = await tx.recipe.findFirst({ where: { name } });
-  if (existing) {
-    const linked = await tx.aiGeneratedRecipe.findFirst({
-      where: { queryHash, linkedRecipeId: existing.id },
-    });
-    if (!linked) {
-      await tx.aiGeneratedRecipe.create({
-        data: {
-          queryHash,
-          linkedRecipeId: existing.id,
-          payload: { recipe } as unknown as Prisma.InputJsonValue,
-        },
-      });
-    }
-    return existing.id;
-  }
-
+): Promise<
+  { id: string; type: MaterialType; required: boolean }[]
+> {
   const ingredientIds: {
     id: string;
     type: MaterialType;
     required: boolean;
   }[] = [];
 
-  for (const item of recipe.ingredients) {
+  for (const item of recipe.ingredients ?? []) {
     const ingName = item.name.trim();
     if (!ingName) continue;
     const row = await ensureIngredientByName(
@@ -117,34 +95,22 @@ export async function persistOneAiRecipe(
     });
   }
 
-  const created = await tx.recipe.create({
-    data: {
-      name,
-      source: RecipeSource.AI,
-      confidence: recipe.confidence,
-      status: RecipeStatus.PUBLISHED,
-      materials: {
-        create: ingredientIds.map((m) => ({
-          ingredientId: m.id,
-          type: m.type,
-          required: m.required,
-        })),
-      },
-    },
-  });
-
   if (Array.isArray(recipe.substitutes)) {
     for (const sub of recipe.substitutes) {
+      const fromName = sub.from?.trim();
+      if (!fromName) continue;
       const from = await ensureIngredientByName(
         tx,
-        sub.from.trim(),
+        fromName,
         IngredientCategory.SEASONING,
         { source: KnowledgeSource.AI },
       );
-      for (const to of sub.to) {
+      for (const to of sub.to ?? []) {
+        const toName = to.name?.trim();
+        if (!toName) continue;
         const toRow = await ensureIngredientByName(
           tx,
-          to.name.trim(),
+          toName,
           IngredientCategory.SEASONING,
           { source: KnowledgeSource.AI },
         );
@@ -170,6 +136,84 @@ export async function persistOneAiRecipe(
     }
   }
 
+  return ingredientIds;
+}
+
+async function syncRecipeMaterials(
+  tx: Tx,
+  recipeId: string,
+  materials: { id: string; type: MaterialType; required: boolean }[],
+): Promise<void> {
+  for (const m of materials) {
+    await tx.recipeMaterial.upsert({
+      where: {
+        recipeId_ingredientId: {
+          recipeId,
+          ingredientId: m.id,
+        },
+      },
+      create: {
+        recipeId,
+        ingredientId: m.id,
+        type: m.type,
+        required: m.required,
+      },
+      update: {
+        type: m.type,
+        required: m.required,
+      },
+    });
+  }
+}
+
+/** 将单条 AI 菜谱写入正式库（已存在同名则复用 id，仍同步配料/替代） */
+export async function persistOneAiRecipe(
+  tx: Tx,
+  recipe: ParsedRecipe,
+  queryHash: string,
+  _queryIngredients: string[] = [],
+): Promise<string> {
+  const name = recipe.name.trim();
+  if (!name || !Array.isArray(recipe.ingredients)) {
+    throw new Error('Invalid AI recipe');
+  }
+
+  const ingredientIds = await ensureAiIngredientsAndSubstitutes(tx, recipe);
+
+  const existing = await tx.recipe.findFirst({ where: { name } });
+  if (existing) {
+    await syncRecipeMaterials(tx, existing.id, ingredientIds);
+    const linked = await tx.aiGeneratedRecipe.findFirst({
+      where: { queryHash, linkedRecipeId: existing.id },
+    });
+    if (!linked) {
+      await tx.aiGeneratedRecipe.create({
+        data: {
+          queryHash,
+          linkedRecipeId: existing.id,
+          payload: { recipe } as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
+    return existing.id;
+  }
+
+  const created = await tx.recipe.create({
+    data: {
+      name,
+      source: RecipeSource.AI,
+      confidence: recipe.confidence,
+      status: RecipeStatus.PUBLISHED,
+      materials: {
+        create: ingredientIds.map((m) => ({
+          ingredientId: m.id,
+          type: m.type,
+          required: m.required,
+        })),
+      },
+    },
+  });
+
   await tx.aiGeneratedRecipe.create({
     data: {
       queryHash,
@@ -193,7 +237,11 @@ export async function persistAiRecipes(
       const materialNames = recipe.ingredients
         .map((i) => i.name.trim())
         .filter(Boolean);
-      if (!isSafeIngredientCombination(materialNames)) continue;
+      if (!isSafeIngredientCombination(materialNames)) {
+        // 不安全组合不建菜，但食材仍按分类入库，避免展示名点进替代时报「库中暂无」
+        await ensureAiIngredientsAndSubstitutes(tx, recipe);
+        continue;
+      }
       ids.push(
         await persistOneAiRecipe(tx, recipe, queryHash, queryIngredients),
       );

@@ -43,6 +43,7 @@ export class IngredientsController {
   async lookupSubstitutes(@Body() dto: LookupSubstitutesDto) {
     const data = await this.substitutesService.listByIngredientName(
       dto.ingredient,
+      dto.type,
     );
     return { code: 0, message: 'ok', data };
   }
