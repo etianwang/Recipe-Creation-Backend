@@ -105,17 +105,17 @@ describe('SearchService DB integration', () => {
       pepper.name,
     ]);
     expect(hit.source).toBe('database');
-    expect(hit.recipe?.name).toBe(recipe.name);
-    expect(hit.score).toBe(100);
-    expect(hit.missing).toEqual([]);
+    expect(hit.items[0]?.name).toBe(recipe.name);
+    expect(hit.items[0]?.score).toBe(100);
+    expect(hit.items[0]?.missing).toEqual([]);
 
     const partial = await service.recommendFromDatabase([
       chicken.name,
       potato.name,
     ]);
-    expect(partial.recipe?.name).toBe(recipe.name);
-    expect(partial.missing).toContain(pepper.name);
-    expect(partial.score).toBeGreaterThan(0);
-    expect(partial.score).toBeLessThan(100);
+    expect(partial.items[0]?.name).toBe(recipe.name);
+    expect(partial.items[0]?.missing).toContain(pepper.name);
+    expect(partial.items[0]?.score).toBeGreaterThan(0);
+    expect(partial.items[0]?.score).toBeLessThan(100);
   });
 });

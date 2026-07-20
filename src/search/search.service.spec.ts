@@ -76,9 +76,9 @@ describe('SearchService', () => {
 
     const result = await service.recommendFromDatabase(['鸡肉', '土豆']);
     expect(result.source).toBe('database');
-    expect(result.recipe?.name).toBe('土豆青椒炒鸡');
-    expect(result.missing).toContain('胡椒粉');
-    expect(result.score).toBeCloseTo(66.67, 1);
+    expect(result.items[0]?.name).toBe('土豆青椒炒鸡');
+    expect(result.items[0]?.missing).toContain('胡椒粉');
+    expect(result.items[0]?.score).toBeCloseTo(66.67, 1);
     expect(result.queryHash).toBeTruthy();
   });
 
@@ -105,9 +105,9 @@ describe('SearchService', () => {
     ]);
 
     const result = await service.recommendFromDatabase(['土豆', '鸡肉']);
-    expect(result.recipe?.name).toBe('土豆炒鸡');
-    expect(result.score).toBe(100);
-    expect(result.missing).toEqual([]);
+    expect(result.items[0]?.name).toBe('土豆炒鸡');
+    expect(result.items[0]?.score).toBe(100);
+    expect(result.items[0]?.missing).toEqual([]);
     expect(result.source).toBe('database');
   });
 });

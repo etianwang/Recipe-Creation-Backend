@@ -8,7 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import type { JwtPayloadUser } from '../auth/jwt-payload';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import {
   CreateIngredientDto,
   SearchIngredientsDto,
@@ -53,18 +60,26 @@ export class IngredientsController {
   }
 
   @Post()
-  async create(@Body() dto: CreateIngredientDto) {
-    const data = await this.ingredientsService.create(dto);
+  @UseGuards(JwtAuthGuard)
+  async create(
+    @Body() dto: CreateIngredientDto,
+    @Req() req: { user: JwtPayloadUser },
+  ) {
+    const data = await this.ingredientsService.submitForReview(dto, req.user.sub);
     return { code: 0, message: 'ok', data };
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async update(@Param('id') id: string, @Body() dto: UpdateIngredientDto) {
     const data = await this.ingredientsService.update(id, dto);
     return { code: 0, message: 'ok', data };
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async remove(@Param('id') id: string) {
     await this.ingredientsService.remove(id);
     return { code: 0, message: 'ok', data: null };

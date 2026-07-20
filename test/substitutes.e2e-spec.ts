@@ -121,7 +121,8 @@ describe('Substitutes API (e2e) TR-SUB-001', () => {
       .send({ ingredient: pepper.name })
       .expect(200);
 
-    expect(byName.body.data).toHaveLength(3);
-    expect(byName.body.data[0].name).toBe(white.name);
+    expect(byName.body.data.items).toHaveLength(3);
+    expect(byName.body.data.items[0].name).toBe(white.name);
+    expect(byName.body.data.ingredient.name).toBe(pepper.name);
   });
 });

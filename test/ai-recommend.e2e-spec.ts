@@ -56,8 +56,9 @@ describe('AI recommend fallback (e2e) TR-AI-001/002', () => {
       .send({ ingredients })
       .expect(200);
 
-    expect(first.body.data.source).toBe('ai');
+    expect(first.body.data.source).toMatch(/ai|mixed/);
     expect(first.body.data.recipe).toBeTruthy();
+    expect(first.body.data.items.length).toBeGreaterThanOrEqual(1);
     expect(first.body.data.queryHash).toMatch(/^[a-f0-9]{64}$/);
     queryHash = first.body.data.queryHash;
 

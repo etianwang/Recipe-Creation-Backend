@@ -10,6 +10,7 @@ describe('SubstitutesService', () => {
     ingredient: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
     },
     ingredientSubstitute: {
       findMany: jest.fn(),
@@ -46,22 +47,42 @@ describe('SubstitutesService', () => {
     ]);
 
     const result = await service.listByIngredientId('p1');
-    expect(prisma.ingredientSubstitute.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { ingredientId: 'p1' },
-        orderBy: { score: 'desc' },
-      }),
-    );
     expect(result.map((r) => r.name)).toEqual(['白胡椒', '黑胡椒']);
     expect(result[0].score).toBe(95);
+    expect(result[0].source).toBe('manual');
+    expect(result[0].sourceLabel).toBe('菜谱库');
   });
 
-  it('throws when ingredient missing', async () => {
+  it('resolves alias 葱 to 大葱 and returns substitutes', async () => {
+    prisma.ingredient.findFirst.mockResolvedValue({
+      id: 'scallion',
+      name: '大葱',
+    });
+    prisma.ingredientSubstitute.findMany.mockResolvedValue([
+      {
+        score: 50,
+        source: KnowledgeSource.MANUAL,
+        substitute: { id: 'onion', name: '洋葱' },
+      },
+    ]);
+
+    const result = await service.listByIngredientName('葱');
+
+    expect(prisma.ingredient.findFirst).toHaveBeenCalledWith({
+      where: { name: '大葱' },
+    });
+    expect(result.resolvedFrom).toBe('葱');
+    expect(result.ingredient.name).toBe('大葱');
+    expect(result.items[0].name).toBe('洋葱');
+  });
+
+  it('throws Chinese message when ingredient missing', async () => {
     prisma.ingredient.findFirst.mockResolvedValue(null);
-    await expect(
-      service.listByIngredientName('不存在的料'),
-    ).rejects.toMatchObject({
+    prisma.ingredient.findMany.mockResolvedValue([]);
+
+    await expect(service.listByIngredientName('不存在的料')).rejects.toMatchObject({
       code: ErrorCodes.NOT_FOUND_INGREDIENT,
+      message: expect.stringContaining('食材库中暂无'),
     });
   });
 });

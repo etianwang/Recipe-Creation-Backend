@@ -4,17 +4,22 @@ import { AiClientService } from './ai-client.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ErrorCodes } from '../common/errors';
 
+jest.mock('../recipe/persist-ai-recipe', () => ({
+  persistAiRecipes: jest.fn().mockResolvedValue([]),
+}));
+
+import { persistAiRecipes } from '../recipe/persist-ai-recipe';
+
 describe('AiRecipeService cache (T-AI-04 / T-AI-06)', () => {
   let service: AiRecipeService;
   const complete = jest.fn();
   const prisma = {
     aiQueryCache: {
       findUnique: jest.fn(),
-      create: jest.fn(),
+      upsert: jest.fn(),
     },
     aiQueryLog: { create: jest.fn() },
-    aiGeneratedRecipe: { create: jest.fn() },
-    knowledgeReview: { create: jest.fn() },
+    aiGeneratedRecipe: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(async (ops: unknown[]) => ops),
   };
 
@@ -30,7 +35,7 @@ describe('AiRecipeService cache (T-AI-04 / T-AI-06)', () => {
     service = module.get(AiRecipeService);
   });
 
-  it('calls AI once and saves on miss (TR-AI-001)', async () => {
+  it('calls AI once, persists recipes, no review queue (TR-AI-001)', async () => {
     prisma.aiQueryCache.findUnique.mockResolvedValue(null);
     complete.mockResolvedValue({
       content: JSON.stringify({
@@ -51,15 +56,16 @@ describe('AiRecipeService cache (T-AI-04 / T-AI-06)', () => {
     expect(first.source).toBe('ai');
     expect(complete).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalled();
+    expect(persistAiRecipes).toHaveBeenCalled();
   });
 
-  it('uses cache and does not call AI again (TR-AI-002)', async () => {
+  it('uses cache, persists to DB, does not call AI again (TR-AI-002)', async () => {
     prisma.aiQueryCache.findUnique.mockResolvedValue({
       queryHash: 'abc',
       response: {
         name: '番茄牛肉煲',
-        ingredients: [],
-        steps: [],
+        ingredients: [{ name: '牛肉', type: '主料', required: true, amount: '200g' }],
+        steps: ['炖'],
         substitutes: [],
         confidence: 0.8,
       },
@@ -68,6 +74,7 @@ describe('AiRecipeService cache (T-AI-04 / T-AI-06)', () => {
     const second = await service.generateOrLoad(['洋葱', '番茄', '牛肉']);
     expect(second.source).toBe('cache');
     expect(complete).not.toHaveBeenCalled();
+    expect(persistAiRecipes).toHaveBeenCalled();
   });
 
   it('throws 40004 on invalid AI JSON (TR-AI-004)', async () => {
@@ -81,5 +88,6 @@ describe('AiRecipeService cache (T-AI-04 / T-AI-06)', () => {
       service.generateOrLoad(['牛肉', '番茄']),
     ).rejects.toMatchObject({ code: ErrorCodes.AI_INVALID_JSON });
     expect(prisma.aiQueryLog.create).toHaveBeenCalled();
+    expect(persistAiRecipes).not.toHaveBeenCalled();
   });
 });

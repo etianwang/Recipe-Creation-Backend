@@ -19,6 +19,7 @@ describe('KnowledgeReviewService.approve', () => {
     aiGeneratedRecipe: { updateMany: jest.fn() },
   };
   const prisma = {
+    ingredient: { upsert: jest.fn() },
     knowledgeReview: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -84,5 +85,37 @@ describe('KnowledgeReviewService.approve', () => {
     );
     expect(tx.ingredientSubstitute.upsert).toHaveBeenCalled();
     expect(tx.aiGeneratedRecipe.updateMany).toHaveBeenCalled();
+  });
+
+  it('materializes ingredient review on approve (TR-GOV-003)', async () => {
+    prisma.knowledgeReview.findUnique.mockResolvedValue({
+      id: 'rev2',
+      kind: ReviewKind.INGREDIENT,
+      status: ReviewStatus.PENDING,
+      payload: {
+        name: '西兰花',
+        category: IngredientCategory.SIDE,
+        taste: null,
+        description: null,
+      },
+    });
+    prisma.ingredient.upsert.mockResolvedValue({
+      id: 'i9',
+      name: '西兰花',
+      category: IngredientCategory.SIDE,
+    });
+    prisma.knowledgeReview.update.mockResolvedValue({
+      id: 'rev2',
+      status: ReviewStatus.APPROVED,
+      decidedAt: new Date(),
+    });
+
+    const result = await service.approve('rev2', 'admin1');
+    expect(result.recipeId).toBe('i9');
+    expect(prisma.ingredient.upsert).toHaveBeenCalledWith({
+      where: { name: '西兰花' },
+      create: expect.objectContaining({ name: '西兰花' }),
+      update: expect.objectContaining({ category: IngredientCategory.SIDE }),
+    });
   });
 });

@@ -10,13 +10,26 @@ import { AnthropicProvider } from './provider/anthropic.provider';
 import { FakeAiProvider } from './provider/fake.provider';
 import { OpenAiCompatibleProvider } from './provider/openai-compatible.provider';
 
+function requireProdAiConfig(message: string): void {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`[AiModule] ${message}`);
+  }
+}
+
 function createAiProvider() {
+  const isProd = process.env.NODE_ENV === 'production';
   const mode = (
     process.env.AI_PROVIDER ||
     (process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY
       ? 'anthropic'
-      : 'fake')
+      : isProd
+        ? ''
+        : 'fake')
   ).toLowerCase();
+
+  if (isProd && !mode) {
+    requireProdAiConfig('AI_PROVIDER or API key required in production');
+  }
 
   const timeoutMs = Number(process.env.AI_TIMEOUT_MS || 60000);
 
@@ -26,16 +39,15 @@ function createAiProvider() {
       process.env.ANTHROPIC_API_KEY ||
       process.env.AI_API_KEY ||
       '';
-    const baseUrl =
-      process.env.ANTHROPIC_BASE_URL ||
-      process.env.AI_BASE_URL ||
-      'https://api.anthropic.com';
     if (!apiKey) {
+      requireProdAiConfig('Anthropic API key required in production');
       return new FakeAiProvider();
     }
     return new AnthropicProvider(
       apiKey,
-      baseUrl,
+      process.env.ANTHROPIC_BASE_URL ||
+        process.env.AI_BASE_URL ||
+        'https://api.anthropic.com',
       process.env.AI_MODEL || 'claude-sonnet-4-6',
       timeoutMs,
     );
@@ -44,6 +56,7 @@ function createAiProvider() {
   if (mode === 'openai' || mode === 'openai-compatible') {
     const apiKey = process.env.AI_API_KEY || '';
     if (!apiKey) {
+      requireProdAiConfig('OpenAI API key required in production');
       return new FakeAiProvider();
     }
     return new OpenAiCompatibleProvider(
@@ -52,6 +65,10 @@ function createAiProvider() {
       process.env.AI_MODEL || 'gpt-4o-mini',
       timeoutMs,
     );
+  }
+
+  if (isProd) {
+    requireProdAiConfig(`Unsupported AI_PROVIDER: ${mode || '(empty)'}`);
   }
 
   return new FakeAiProvider();

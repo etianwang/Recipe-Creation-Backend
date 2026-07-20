@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Ingredient, IngredientCategory, Prisma } from '@prisma/client';
+import {
+  Ingredient,
+  IngredientCategory,
+  Prisma,
+  ReviewKind,
+  ReviewStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppError, ErrorCodes } from '../common/errors';
 import { categoryLabel, parseCategory } from './ingredient-category';
@@ -16,6 +22,13 @@ export type IngredientView = {
   taste: string | null;
   description: string | null;
   createdAt: string;
+};
+
+export type IngredientSubmitView = {
+  reviewId: string;
+  status: 'PENDING';
+  name: string;
+  category: IngredientCategory;
 };
 
 @Injectable()
@@ -101,6 +114,66 @@ export class IngredientsService {
       }
       throw err;
     }
+  }
+
+  async submitForReview(
+    dto: CreateIngredientDto,
+    submitterId: string,
+  ): Promise<IngredientSubmitView> {
+    const name = dto.name.trim();
+    if (!name) {
+      throw new AppError(ErrorCodes.INVALID_PARAM, 'name is required', 400);
+    }
+
+    const existing = await this.prisma.ingredient.findUnique({ where: { name } });
+    if (existing) {
+      throw new AppError(
+        ErrorCodes.INVALID_PARAM,
+        `Ingredient already exists: ${name}`,
+        400,
+      );
+    }
+
+    const duplicateReview = await this.prisma.knowledgeReview.findMany({
+      where: {
+        kind: ReviewKind.INGREDIENT,
+        status: ReviewStatus.PENDING,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    for (const row of duplicateReview) {
+      const payload = row.payload as Prisma.JsonObject;
+      if (String(payload.name ?? '').trim() === name) {
+        return {
+          reviewId: row.id,
+          status: 'PENDING',
+          name,
+          category: dto.category,
+        };
+      }
+    }
+
+    const review = await this.prisma.knowledgeReview.create({
+      data: {
+        kind: ReviewKind.INGREDIENT,
+        status: ReviewStatus.PENDING,
+        payload: {
+          name,
+          category: dto.category,
+          taste: dto.taste?.trim() || null,
+          description: dto.description?.trim() || null,
+          submittedBy: submitterId,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      reviewId: review.id,
+      status: 'PENDING',
+      name,
+      category: dto.category,
+    };
   }
 
   async update(id: string, dto: UpdateIngredientDto): Promise<IngredientView> {

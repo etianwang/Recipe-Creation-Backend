@@ -70,6 +70,7 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
 
   reviews KnowledgeReview[]
+  favorites RecipeFavorite[]
 
   @@map("users")
 }
@@ -99,6 +100,7 @@ model Recipe {
 
   materials          RecipeMaterial[]
   aiGeneratedRecipes AiGeneratedRecipe[]
+  favorites          RecipeFavorite[]
 
   @@index([name])
   @@map("recipes")
@@ -115,6 +117,19 @@ model RecipeMaterial {
 
   @@id([recipeId, ingredientId])
   @@map("recipe_materials")
+}
+
+model RecipeFavorite {
+  userId    String   @map("user_id") @db.Char(36)
+  recipeId  String   @map("recipe_id") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, recipeId])
+  @@index([recipeId])
+  @@map("recipe_favorites")
 }
 
 model IngredientSubstitute {

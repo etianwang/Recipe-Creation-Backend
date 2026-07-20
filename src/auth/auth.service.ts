@@ -27,12 +27,10 @@ export class AuthService {
       throw new AppError(ErrorCodes.INVALID_PARAM, 'username already taken', 400);
     }
 
-    const role =
-      dto.role === UserRole.ADMIN ? UserRole.ADMIN : UserRole.USER;
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
     const user = await this.prisma.user.create({
-      data: { username, passwordHash, role },
+      data: { username, passwordHash, role: UserRole.USER },
     });
 
     return this.tokenResponse(user);
@@ -71,10 +69,23 @@ export class AuthService {
       throw new AppError(ErrorCodes.UNAUTHORIZED, 'Missing openid', 401);
     }
 
+    const adminOpenids = new Set(
+      String(process.env.ADMIN_OPENIDS ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+    const desiredRole = adminOpenids.has(openid) ? UserRole.ADMIN : UserRole.USER;
+
     let user = await this.prisma.user.findUnique({ where: { openid } });
     if (!user) {
       user = await this.prisma.user.create({
-        data: { openid, role: UserRole.USER },
+        data: { openid, role: desiredRole },
+      });
+    } else if (user.role !== desiredRole) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { role: desiredRole },
       });
     }
 

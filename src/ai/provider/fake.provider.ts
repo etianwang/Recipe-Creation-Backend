@@ -21,14 +21,18 @@ export class FakeAiProvider implements AiProvider {
       .map((s) => s.trim())
       .filter(Boolean) ?? ['牛肉', '番茄', '洋葱'];
 
-    const content = JSON.stringify({
-      name: `${names[0] || '食材'}创意煲`,
+    const countMatch = hint.match(/propose (\d+) distinct/);
+    const count = Math.min(5, Number(countMatch?.[1] || 1));
+
+    const recipes = Array.from({ length: count }, (_, i) => ({
+      name: `${names[0] || '食材'}创意菜${i + 1}`,
       ingredients: names.map((name) => ({
         name,
         type: '主料',
         required: true,
+        amount: '200g',
       })).concat([
-        { name: '盐', type: '调料', required: true },
+        { name: '盐', type: '调料', required: true, amount: '适量' },
       ]),
       steps: ['准备食材', '下锅烹煮', '调味出锅'],
       substitutes: [
@@ -37,8 +41,10 @@ export class FakeAiProvider implements AiProvider {
           to: [{ name: '酱油', score: 40 }],
         },
       ],
-      confidence: 0.85,
-    });
+      confidence: 0.85 - i * 0.05,
+    }));
+
+    const content = JSON.stringify({ recipes });
 
     return {
       content,

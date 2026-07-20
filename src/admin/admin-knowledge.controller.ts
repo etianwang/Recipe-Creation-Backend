@@ -1,12 +1,14 @@
 import {
   Controller,
+  Get,
   HttpCode,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { ReviewKind, UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -17,6 +19,17 @@ import { KnowledgeReviewService } from '../knowledge/knowledge-review.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AdminKnowledgeController {
   constructor(private readonly reviews: KnowledgeReviewService) {}
+
+  @Get()
+  @Roles(UserRole.ADMIN)
+  async list(@Query('kind') kind?: string) {
+    const reviewKind =
+      kind && Object.values(ReviewKind).includes(kind as ReviewKind)
+        ? (kind as ReviewKind)
+        : undefined;
+    const data = await this.reviews.listPending(reviewKind);
+    return { code: 0, message: 'ok', data };
+  }
 
   @Post(':id/approve')
   @HttpCode(200)

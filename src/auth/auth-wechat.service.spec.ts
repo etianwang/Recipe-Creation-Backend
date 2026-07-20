@@ -10,6 +10,7 @@ describe('AuthService.loginWithWechatCode', () => {
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
   };
   const jwt = { sign: jest.fn().mockReturnValue('jwt-token') };
@@ -27,6 +28,11 @@ describe('AuthService.loginWithWechatCode', () => {
     jest.clearAllMocks();
     wechat.code2Session.mockResolvedValue({ openid });
     jwt.sign.mockReturnValue('jwt-token');
+  });
+
+  const originalEnv = process.env.ADMIN_OPENIDS;
+  afterEach(() => {
+    process.env.ADMIN_OPENIDS = originalEnv;
   });
 
   it('creates user on first login', async () => {
@@ -60,5 +66,32 @@ describe('AuthService.loginWithWechatCode', () => {
     const data = await service.loginWithWechatCode({ code: 'abc' });
     expect(prisma.user.create).not.toHaveBeenCalled();
     expect(data.user.id).toBe('u1');
+  });
+
+  it('upgrades role when openid is in ADMIN_OPENIDS', async () => {
+    process.env.ADMIN_OPENIDS = openid;
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      openid,
+      username: null,
+      role: UserRole.USER,
+      passwordHash: null,
+      createdAt: new Date(),
+    });
+    prisma.user.update.mockResolvedValue({
+      id: 'u1',
+      openid,
+      username: null,
+      role: UserRole.ADMIN,
+      passwordHash: null,
+      createdAt: new Date(),
+    });
+
+    const data = await service.loginWithWechatCode({ code: 'abc' });
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { role: UserRole.ADMIN },
+    });
+    expect(data.user.role).toBe(UserRole.ADMIN);
   });
 });

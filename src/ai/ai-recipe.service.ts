@@ -2,17 +2,20 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeQueryHash, normalizeIngredientNames } from '../search/query-hash';
+import { persistAiRecipes } from '../recipe/persist-ai-recipe';
 import { AiClientService } from './ai-client.service';
 import {
   buildRecipeSystemPrompt,
   buildRecipeUserPrompt,
 } from './prompt/recipe-prompt';
-import { parseRecipeJson, ParsedRecipe } from './parse/parse-recipe-json';
+import { parseRecipePayload, ParsedRecipe } from './parse/parse-recipe-json';
 import { AppError, ErrorCodes } from '../common/errors';
 
 export type AiRecipePipelineResult = {
   queryHash: string;
   normalizedIngredients: string[];
+  recipes: ParsedRecipe[];
+  /** @deprecated use recipes[0] */
   recipe: ParsedRecipe;
   source: 'cache' | 'ai';
   rawContent?: string;
@@ -25,8 +28,67 @@ export class AiRecipeService {
     private readonly aiClient: AiClientService,
   ) {}
 
+  /** Read ai_query_cache only — never calls the LLM. */
+  async loadFromCacheOnly(
+    ingredientNames: string[],
+  ): Promise<AiRecipePipelineResult | null> {
+    const normalizedIngredients = normalizeIngredientNames(ingredientNames);
+    if (normalizedIngredients.length === 0) {
+      return null;
+    }
+
+    const queryHash = computeQueryHash(normalizedIngredients);
+    const cached = await this.prisma.aiQueryCache.findUnique({
+      where: { queryHash },
+    });
+    if (!cached) {
+      return null;
+    }
+
+    const recipes = parseRecipePayload(cached.response);
+    return {
+      queryHash,
+      normalizedIngredients,
+      recipes,
+      recipe: recipes[0],
+      source: 'cache',
+    };
+  }
+
+  /** 将 AI/cache 菜谱写入正式库，便于下次纯库内推荐。 */
+  async ensurePersisted(
+    queryHash: string,
+    recipes: ParsedRecipe[],
+  ): Promise<void> {
+    if (recipes.length === 0) return;
+    await persistAiRecipes(this.prisma, queryHash, recipes);
+  }
+
+  /** 按 recipeId 取 AI 原始步骤与用量（库内 AI 菜谱展示用） */
+  async getParsedDetailsByRecipeIds(
+    recipeIds: string[],
+  ): Promise<Map<string, ParsedRecipe>> {
+    if (recipeIds.length === 0) return new Map();
+
+    const rows = await this.prisma.aiGeneratedRecipe.findMany({
+      where: { linkedRecipeId: { in: recipeIds } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const map = new Map<string, ParsedRecipe>();
+    for (const row of rows) {
+      if (!row.linkedRecipeId || map.has(row.linkedRecipeId)) continue;
+      const payload = row.payload as { recipe?: ParsedRecipe };
+      if (payload?.recipe?.name) {
+        map.set(row.linkedRecipeId, payload.recipe);
+      }
+    }
+    return map;
+  }
+
   async generateOrLoad(
     ingredientNames: string[],
+    options?: { recipeCount?: number },
   ): Promise<AiRecipePipelineResult> {
     const normalizedIngredients = normalizeIngredientNames(ingredientNames);
     if (normalizedIngredients.length === 0) {
@@ -38,21 +100,17 @@ export class AiRecipeService {
     }
 
     const queryHash = computeQueryHash(normalizedIngredients);
-    const cached = await this.prisma.aiQueryCache.findUnique({
-      where: { queryHash },
-    });
-    if (cached) {
-      const recipe = cached.response as unknown as ParsedRecipe;
-      return {
-        queryHash,
-        normalizedIngredients,
-        recipe,
-        source: 'cache',
-      };
+    const cachedHit = await this.loadFromCacheOnly(ingredientNames);
+    if (cachedHit) {
+      await this.ensurePersisted(queryHash, cachedHit.recipes);
+      return cachedHit;
     }
 
     const system = buildRecipeSystemPrompt();
-    const user = buildRecipeUserPrompt(normalizedIngredients);
+    const user = buildRecipeUserPrompt(
+      normalizedIngredients,
+      options?.recipeCount ?? 1,
+    );
     const completion = await this.aiClient.complete(
       [
         { role: 'system', content: system },
@@ -61,10 +119,10 @@ export class AiRecipeService {
       { jsonMode: true },
     );
 
-    let recipe: ParsedRecipe;
+    let recipes: ParsedRecipe[];
     let parsedOk = true;
     try {
-      recipe = parseRecipeJson(completion.content);
+      recipes = parseRecipePayload(completion.content);
     } catch {
       parsedOk = false;
       await this.prisma.aiQueryLog.create({
@@ -93,36 +151,27 @@ export class AiRecipeService {
           parsedOk,
         },
       }),
-      this.prisma.aiQueryCache.create({
-        data: {
+      this.prisma.aiQueryCache.upsert({
+        where: { queryHash },
+        create: {
           queryHash,
           input: normalizedIngredients,
-          response: recipe as unknown as Prisma.InputJsonValue,
+          response: { recipes } as unknown as Prisma.InputJsonValue,
         },
-      }),
-      this.prisma.aiGeneratedRecipe.create({
-        data: {
-          queryHash,
-          payload: recipe as unknown as Prisma.InputJsonValue,
-        },
-      }),
-      this.prisma.knowledgeReview.create({
-        data: {
-          kind: 'RECIPE',
-          payload: {
-            queryHash,
-            recipe,
-            ingredients: normalizedIngredients,
-          } as unknown as Prisma.InputJsonValue,
-          status: 'PENDING',
+        update: {
+          input: normalizedIngredients,
+          response: { recipes } as unknown as Prisma.InputJsonValue,
         },
       }),
     ]);
 
+    await this.ensurePersisted(queryHash, recipes);
+
     return {
       queryHash,
       normalizedIngredients,
-      recipe,
+      recipes,
+      recipe: recipes[0],
       source: 'ai',
       rawContent: completion.content,
     };

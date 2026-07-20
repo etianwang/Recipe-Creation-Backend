@@ -128,9 +128,12 @@ describe('POST /api/v1/recipe/recommend (e2e)', () => {
 
     expect(full.body.code).toBe(0);
     expect(full.body.data.source).toBe('database');
+    expect(full.body.data.items.length).toBeGreaterThanOrEqual(1);
     expect(full.body.data.recipe).toBe(recipe.name);
     expect(full.body.data.score).toBe(100);
     expect(full.body.data.missing).toEqual([]);
+    expect(full.body.data.items[0].steps.length).toBeGreaterThan(0);
+    expect(full.body.data.items[0].ingredients.length).toBeGreaterThan(0);
     expect(full.body.data.queryHash).toMatch(/^[a-f0-9]{64}$/);
 
     const partial = await request(app.getHttpServer())

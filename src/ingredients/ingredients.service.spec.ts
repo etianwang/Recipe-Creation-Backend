@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { IngredientCategory } from '@prisma/client';
+import { IngredientCategory, ReviewKind, ReviewStatus } from '@prisma/client';
 import { IngredientsService } from './ingredients.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppError, ErrorCodes } from '../common/errors';
@@ -13,6 +13,10 @@ describe('IngredientsService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+    },
+    knowledgeReview: {
+      findMany: jest.fn(),
+      create: jest.fn(),
     },
   };
 
@@ -88,6 +92,32 @@ describe('IngredientsService', () => {
         taste: null,
         description: null,
       },
+    });
+  });
+
+  it('submits ingredient as pending review (TR-GOV-002)', async () => {
+    prisma.ingredient.findUnique.mockResolvedValue(null);
+    prisma.knowledgeReview.findMany.mockResolvedValue([]);
+    prisma.knowledgeReview.create.mockResolvedValue({
+      id: 'rev1',
+      status: ReviewStatus.PENDING,
+    });
+
+    const result = await service.submitForReview(
+      { name: ' 西兰花 ', category: IngredientCategory.SIDE },
+      'user1',
+    );
+
+    expect(result).toMatchObject({
+      reviewId: 'rev1',
+      status: 'PENDING',
+      name: '西兰花',
+    });
+    expect(prisma.knowledgeReview.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        kind: ReviewKind.INGREDIENT,
+        status: ReviewStatus.PENDING,
+      }),
     });
   });
 });

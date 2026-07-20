@@ -21,8 +21,8 @@ export class OfficialWechatSessionClient extends WechatSessionClient {
       throw new AppError(ErrorCodes.INVALID_PARAM, 'code is required', 400);
     }
 
-    // 本地/测试：允许用固定 code 跳过真实微信（不配置 SECRET 时）
     if (
+      process.env.NODE_ENV !== 'production' &&
       process.env.WECHAT_DEV_LOGIN === '1' &&
       trimmed.startsWith('dev:')
     ) {

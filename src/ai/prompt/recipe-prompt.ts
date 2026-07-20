@@ -1,9 +1,11 @@
 export const RECIPE_JSON_SCHEMA_HINT = `{
-  "name": string,
-  "ingredients": [{ "name": string, "type": "主料"|"辅料"|"调料"|"香料"|"其他", "required": boolean }],
-  "steps": string[],
-  "substitutes": [{ "from": string, "to": [{ "name": string, "score": number }] }],
-  "confidence": number
+  "recipes": [{
+    "name": string,
+    "ingredients": [{ "name": string, "amount": string, "type": "主料"|"辅料"|"调料"|"香料"|"其他", "required": boolean }],
+    "steps": string[],
+    "substitutes": [{ "from": string, "to": [{ "name": string, "score": number }] }],
+    "confidence": number
+  }]
 }`;
 
 export function buildRecipeSystemPrompt(): string {
@@ -16,10 +18,16 @@ export function buildRecipeSystemPrompt(): string {
   ].join('\n');
 }
 
-export function buildRecipeUserPrompt(ingredients: string[]): string {
+export function buildRecipeUserPrompt(
+  ingredients: string[],
+  recipeCount = 1,
+): string {
   const list = ingredients.join(', ');
+  const n = Math.min(5, Math.max(1, recipeCount));
   return [
     `Available ingredients (normalized): ${list}`,
-    'Task: propose one cookable recipe as JSON matching the schema.',
+    `Task: propose ${n} distinct cookable recipes as JSON matching the schema (recipes array).`,
+    'Each recipe must include ingredient amounts (e.g. "200g", "2个", "适量") and at least 3 steps.',
+    'Sort recipes by confidence descending.',
   ].join('\n');
 }

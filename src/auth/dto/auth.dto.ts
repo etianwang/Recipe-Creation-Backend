@@ -1,5 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
-import { UserRole } from '@prisma/client';
+import { IsNotEmpty, IsString, MinLength } from 'class-validator';
 
 export class RegisterDto {
   @IsString()
@@ -10,9 +9,6 @@ export class RegisterDto {
   @MinLength(6)
   password!: string;
 
-  /** Dev-only: allow creating ADMIN when registering (MVP skeleton). */
-  @IsOptional()
-  role?: UserRole;
 }
 
 export class LoginDto {

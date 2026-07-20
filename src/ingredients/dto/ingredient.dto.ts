@@ -27,6 +27,13 @@ export class CreateIngredientDto {
   description?: string;
 }
 
+export class SubmitIngredientResultDto {
+  reviewId!: string;
+  status!: 'PENDING';
+  name!: string;
+  category!: IngredientCategory;
+}
+
 export class UpdateIngredientDto {
   @IsOptional()
   @IsString()
