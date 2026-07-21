@@ -132,22 +132,22 @@ export function expandIngredientRow(item: {
     .filter(Boolean);
   const parts = chunks.length > 1 ? chunks : [item.name.trim()];
 
-  return parts
-    .map((part) => {
-      const peeled = peelIngredientNameAndAmount(
-        part,
-        parts.length === 1 ? item.amount : undefined,
-      );
-      const name = canonicalizeIngredientName(peeled.name);
-      if (!name) return null;
-      return {
-        name,
-        type,
-        required,
-        amount: peeled.amount || '适量',
-      };
-    })
-    .filter((row): row is ParsedIngredient => row !== null);
+  const rows: ParsedIngredient[] = [];
+  for (const part of parts) {
+    const peeled = peelIngredientNameAndAmount(
+      part,
+      parts.length === 1 ? item.amount : undefined,
+    );
+    const name = canonicalizeIngredientName(peeled.name);
+    if (!name) continue;
+    rows.push({
+      name,
+      type,
+      required,
+      amount: peeled.amount || '适量',
+    });
+  }
+  return rows;
 }
 
 /** 将 AI 输出的 type 收敛到允许的分类；非法值回落为「辅料」 */
